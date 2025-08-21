@@ -80,45 +80,41 @@ zonnx export /path/to/model.zmf --output /path/to/custom.onnx
 
 ### 4. Conversion Logic: ONNX-to-ZMF (`import`)
 
-This is the more complex pathway, as ONNX is a superset of ZMF's capabilities.
+This is the more complex pathway, as ONNX is a superset of ZMF's capabilities. The goal is to produce a `zmf.Model` protobuf, which separates the initial token embedding layer from the main computational graph.
 
 #### 4.1. Loading and Validation
 
-1.  The `.onnx` file will be parsed using the `github.com/yalue/onnxruntime_go` library (or a similar pure Go ONNX parser).
+1.  The `.onnx` file will be parsed using a pure Go ONNX parser like `github.com/onnx-go/onnx`. This avoids the need for CGO and simplifies cross-compilation.
 2.  **Initial Validation Pass:** Before conversion, the tool will perform a validation pass on the loaded ONNX graph to ensure it is compatible with `zerfoo`. The process will fail immediately if:
     *   The ONNX opset version is outside a supported range (e.g., < 13 or > 18).
     *   The graph contains any non-tensor data types (`Sequence`, `Map`).
-    *   The graph contains operators with graph attributes (`If`, `Loop`, `Scan`).
+    *   The graph contains control flow operators (`If`, `Loop`, `Scan`).
     *   Any tensor in the graph uses a data type not supported by `zerfoo/numeric` (e.g., `UINT8`, `BOOL`).
 
 #### 4.2. Graph Traversal and Operator Mapping
 
-1.  The conversion engine will maintain a registry of operator converters:
-    ```go
-    type ONNXConverterFunc func(node *onnx.NodeProto, params map[string]*format.Tensor) (*format.Node, error)
+1.  **Parameter Extraction:** All ONNX `initializers` (weights, biases) will be extracted first and converted into the `zmf.Tensor` protobuf format. They will be stored in a map keyed by their name.
+2.  **Token Embedding Identification:** The tool will identify the `TokenEmbedding` layer. This is typically the first `Gather` operator in the graph whose primary input is the main token embedding weight matrix (found in the initializers). This node will be converted into the `embedding` field of the `zmf.Model` protobuf. The output of this node will serve as the input to the main computational graph.
+3.  **Node Conversion:** The tool will iterate through the remaining nodes of the ONNX graph in topological order.
+    *   A registry of operator converters will be maintained:
+        ```go
+        type ONNXConverterFunc func(node *onnx.NodeProto, params map[string]*zmf.Tensor) (*zmf.Node, error)
 
-    var onnxConverters = map[string]ONNXConverterFunc{
-        "MatMul":      convertMatMul,
-        "Add":         convertAdd,
-        "Relu":        convertRelu,
-        "Reshape":     convertReshape,
-        "RMSNorm":     convertRMSNorm, // Assuming a custom op or a recognized pattern
-        // ... and so on for all supported operators
-    }
-    ```
-2.  **Parameter Extraction:** All ONNX `initializers` (weights, biases) will be extracted first and converted into the ZMF `format.Tensor` protobuf format. They will be stored in a map keyed by their name.
-3.  **Node Conversion:** The tool will iterate through the nodes of the ONNX graph in topological order. For each node:
-    *   It will look up the node's `op_type` in the `onnxConverters` map. If not found, the conversion fails with an `ErrUnsupportedOperator` error.
-    *   The corresponding `ONNXConverterFunc` is called. This function is responsible for:
-        *   Creating a `format.Node` protobuf.
-        *   Mapping the ONNX inputs and outputs to the ZMF node's inputs and outputs.
-        *   Converting ONNX attributes to ZMF attributes. For example, the `epsilon` attribute of an `RMSNorm` operator.
-        *   Handling architectural differences. For example, a `Gemm` operator in ONNX might be decomposed into a `MatMul` and an `Add` node in ZMF, or mapped to a single `Dense` ZMF node.
+        var onnxConverters = map[string]ONNXConverterFunc{
+            "MatMul":      convertMatMul,
+            "Add":         convertAdd,
+            "Relu":        convertRelu,
+            "RMSNorm":     convertRMSNorm, // Assuming a custom op or a recognized pattern
+            // ... and so on for all supported operators
+        }
+        ```
+    *   For each node, its `op_type` is looked up in the `onnxConverters` map. If not found, the conversion fails with an `ErrUnsupportedOperator` error.
+    *   The corresponding `ONNXConverterFunc` is called to create a `zmf.Node` protobuf, mapping inputs, outputs, and attributes.
 
 #### 4.3. I/O and Serialization
 
-1.  The ONNX graph's `input` and `output` `ValueInfoProto` definitions will be converted to ZMF `ValueInfo` messages, preserving the name, data type, and shape.
-2.  The complete `format.Model` protobuf will be assembled and serialized to the file specified by the `--output` flag.
+1.  The complete `zmf.Model` protobuf, containing both the standalone `embedding` layer and the `graph` of computational nodes, will be assembled.
+2.  The model will be serialized to the file specified by the `--output` flag.
 
 ---
 
@@ -127,18 +123,9 @@ This is the more complex pathway, as ONNX is a superset of ZMF's capabilities.
 This pathway is simpler as ZMF is more constrained.
 
 1.  **Loading:** The `.zmf` file will be parsed using `google.golang.org/protobuf`.
-2.  **Operator Mapping:** A reverse mapping will be used:
-    ```go
-    type ZMFConverterFunc func(node *format.Node, builder *ONNXGraphBuilder) error
-
-    var zmfConverters = map[string]ZMFConverterFunc{
-        "Dense":       convertDense,
-        "RMSNorm":     convertRMSNormToONNX,
-        // ...
-    }
-    ```
-3.  **Graph Construction:** An `ONNXGraphBuilder` utility will be created to simplify the construction of the ONNX graph.
-4.  **Node Conversion:** The tool will iterate through the ZMF nodes. For each node, the corresponding `ZMFConverterFunc` will be called to create one or more ONNX nodes and add them to the graph builder.
+2.  **Graph Construction:** An `ONNXGraphBuilder` utility will be created to simplify the construction of the ONNX graph.
+3.  **Embedding Conversion:** The `embedding` field from the `zmf.Model` will be converted first into an ONNX `Gather` node and its corresponding weight `initializer`.
+4.  **Node Conversion:** The tool will iterate through the ZMF nodes in the `graph` field. A reverse mapping will be used to create the corresponding ONNX nodes.
 5.  **Parameter Conversion:** The ZMF `parameters` map will be converted into ONNX `initializers`.
 6.  **Serialization:** The final ONNX model will be serialized to the output file.
 
@@ -159,17 +146,17 @@ Error handling will be robust and user-friendly.
 
 ### 7. Testing Strategy
 
-1.  **Unit Tests:** Each individual operator converter function (e.g., `convertMatMul`) will have its own unit tests.
+1.  **Unit Tests:** Each individual operator converter function will have its own unit tests.
 2.  **Integration Tests:** The CLI will be tested end-to-end by executing the `import` and `export` commands as subprocesses and verifying the output files.
 3.  **Round-Trip Tests:** A suite of tests will perform a full round-trip conversion (`ZMF -> ONNX -> ZMF`) and verify that the final ZMF file is byte-for-byte identical to the original.
-4.  **Reference Model Validation:** The ONNX-to-ZMF converter will be tested against a curated set of simple models from the ONNX Model Zoo (e.g., a small MLP or CNN) to ensure correctness.
+4.  **Reference Model Validation:** The ONNX-to-ZMF converter will be tested against the Gemma 3 ONNX model to ensure correctness.
 
 ---
 
 ### 8. Project Structure
 
 ```
-/zerfoo/zonnx
+/zonnx
 ├── cmd/
 │   └── zonnx/
 │       └── main.go         // CLI entry point
