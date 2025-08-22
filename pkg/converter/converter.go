@@ -3,6 +3,9 @@ package converter
 import (
 	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/zerfoo/zonnx/internal/onnx"
 	"github.com/zerfoo/zmf"
@@ -10,6 +13,11 @@ import (
 
 // ONNXToZMF converts an ONNX model to the ZMF format.
 func ONNXToZMF(model *onnx.ModelProto) (*zmf.Model, error) {
+	return ONNXToZMFWithPath(model, "")
+}
+
+// ONNXToZMFWithPath converts an ONNX model to the ZMF format with support for external data files.
+func ONNXToZMFWithPath(model *onnx.ModelProto, modelPath string) (*zmf.Model, error) {
 	onnxGraph := model.GetGraph()
 	if onnxGraph == nil {
 		return nil, fmt.Errorf("model graph is nil")
@@ -82,7 +90,7 @@ func ONNXToZMF(model *onnx.ModelProto) (*zmf.Model, error) {
 		dtype := onnx.TensorProto_DataType(onnxTensor.GetDataType())
 		switch dtype {
 		case onnx.TensorProto_FLOAT, onnx.TensorProto_FLOAT16, onnx.TensorProto_BFLOAT16, onnx.TensorProto_DOUBLE:
-			zmfTensor, err := convertTensor(onnxTensor)
+			zmfTensor, err := convertTensorWithPath(onnxTensor, modelPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert float initializer '%s': %w", name, err)
 			}
@@ -270,9 +278,26 @@ func convertAttribute(onnxAttr *onnx.AttributeProto) (*zmf.Attribute, error) {
 }
 
 func convertTensor(onnxTensor *onnx.TensorProto) (*zmf.Tensor, error) {
+	return convertTensorWithPath(onnxTensor, "")
+}
+
+func convertTensorWithPath(onnxTensor *onnx.TensorProto, modelPath string) (*zmf.Tensor, error) {
+	var data []byte
+	var err error
+
+	// Check if tensor uses external data
+	if len(onnxTensor.GetExternalData()) > 0 {
+		data, err = loadExternalData(onnxTensor, modelPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load external data: %w", err)
+		}
+	} else {
+		data = onnxTensor.GetRawData()
+	}
+
 	zmfTensor := &zmf.Tensor{
 		Shape: onnxTensor.GetDims(),
-		Data:  onnxTensor.GetRawData(),
+		Data:  data,
 	}
 	switch onnx.TensorProto_DataType(onnxTensor.GetDataType()) {
 	case onnx.TensorProto_FLOAT:
@@ -291,6 +316,94 @@ func convertTensor(onnxTensor *onnx.TensorProto) (*zmf.Tensor, error) {
 		return nil, fmt.Errorf("unsupported tensor data type: %s", onnx.TensorProto_DataType_name[onnxTensor.GetDataType()])
 	}
 	return zmfTensor, nil
+}
+
+// loadExternalData loads tensor data from external files
+func loadExternalData(tensor *onnx.TensorProto, modelPath string) ([]byte, error) {
+	var location string
+	var offset int64
+	var length int64
+
+	// Parse external data metadata
+	for _, entry := range tensor.GetExternalData() {
+		key := entry.GetKey()
+		value := entry.GetValue()
+		
+		switch key {
+		case "location":
+			location = value
+		case "offset":
+			if value != "" {
+				var err error
+				offset, err = strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid offset value: %s", value)
+				}
+			}
+		case "length":
+			if value != "" {
+				var err error
+				length, err = strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid length value: %s", value)
+				}
+			}
+		}
+	}
+
+	if location == "" {
+		return nil, fmt.Errorf("external data location not specified")
+	}
+
+	// Resolve the external data file path
+	var externalPath string
+	if filepath.IsAbs(location) {
+		externalPath = location
+	} else {
+		// Relative to the model file directory
+		modelDir := filepath.Dir(modelPath)
+		externalPath = filepath.Join(modelDir, location)
+	}
+
+	// Open the external data file
+	file, err := os.Open(externalPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open external data file %s: %w", externalPath, err)
+	}
+	defer file.Close()
+
+	// Seek to the offset if specified
+	if offset > 0 {
+		_, err = file.Seek(offset, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to seek to offset %d: %w", offset, err)
+		}
+	}
+
+	// Read the data
+	var data []byte
+	if length > 0 {
+		// Read specific length
+		data = make([]byte, length)
+		_, err = file.Read(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read %d bytes from external file: %w", length, err)
+		}
+	} else {
+		// Read all remaining data
+		data, err = os.ReadFile(externalPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read external data file: %w", err)
+		}
+		if offset > 0 {
+			if int64(len(data)) <= offset {
+				return nil, fmt.Errorf("offset %d exceeds file size %d", offset, len(data))
+			}
+			data = data[offset:]
+		}
+	}
+
+	return data, nil
 }
 
 func getInt64Data(p *onnx.TensorProto) ([]int64, error) {
