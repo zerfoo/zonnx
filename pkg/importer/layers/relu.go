@@ -11,7 +11,7 @@ import (
 )
 
 func init() {
-	importer.Register("Relu", BuildReLU[float32]) // Note: ONNX op_type is often capitalized as "Relu"
+	importer.Register("Relu", BuildReLU[float32])
 }
 
 // BuildReLU creates a new ReLU layer from an ONNX node.
@@ -19,7 +19,7 @@ func BuildReLU[T tensor.Numeric](
 	engine compute.Engine[T],
 	_ numeric.Arithmetic[T],
 	_ *onnx.NodeProto,
-	_ map[string]*graph.Parameter[T],
+	_ *importer.ConversionContext,
 ) (graph.Node[T], error) {
 	return activations.NewReLU[T](engine), nil
 }

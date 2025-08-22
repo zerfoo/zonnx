@@ -21,7 +21,7 @@ func BuildReshape[T tensor.Numeric](
 	engine compute.Engine[T],
 	_ numeric.Arithmetic[T],
 	node *onnx.NodeProto,
-	_ map[string]*graph.Parameter[T],
+	ctx *importer.ConversionContext,
 ) (graph.Node[T], error) {
 
 	// In ONNX, the target shape is the second input to the Reshape node.

@@ -21,7 +21,7 @@ func BuildTranspose[T tensor.Numeric](
 	engine compute.Engine[T],
 	_ numeric.Arithmetic[T],
 	node *onnx.NodeProto,
-	_ map[string]*graph.Parameter[T],
+	ctx *importer.ConversionContext,
 ) (graph.Node[T], error) {
 
 	var perm []int
@@ -33,8 +33,8 @@ func BuildTranspose[T tensor.Numeric](
 			for i, v := range attr.GetInts() {
 				perm[i] = int(v)
 			}
-		found = true
-		break
+			found = true
+			break
 		}
 	}
 

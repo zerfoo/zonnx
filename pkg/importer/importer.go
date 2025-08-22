@@ -14,12 +14,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// ConversionContext holds all the graph-level information needed during conversion.
+type ConversionContext struct {
+	Initializers map[string]*onnx.TensorProto
+	ValueInfo    map[string]*onnx.ValueInfoProto
+}
+
 // LayerConstructor defines a function that creates a zerfoo graph.Node from an ONNX NodeProto.
 type LayerConstructor[T tensor.Numeric] func(
 	engine compute.Engine[T],
 	ops numeric.Arithmetic[T],
 	node *onnx.NodeProto,
-	params map[string]*graph.Parameter[T],
+	ctx *ConversionContext,
 ) (graph.Node[T], error)
 
 // registry holds the mapping from ONNX op_types to our layer constructors.
@@ -41,18 +47,35 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 		return nil, err
 	}
 
-	// TODO: Load parameters
-	loadedParams := make(map[string]*graph.Parameter[T])
+	// Prepare the conversion context
+	ctx := &ConversionContext{
+		Initializers: make(map[string]*onnx.TensorProto),
+		ValueInfo:    make(map[string]*onnx.ValueInfoProto),
+	}
+	for _, init := range onnxModel.GetGraph().GetInitializer() {
+		ctx.Initializers[init.GetName()] = init
+	}
+	for _, vi := range onnxModel.GetGraph().GetValueInfo() {
+		ctx.ValueInfo[vi.GetName()] = vi
+	}
+	for _, vi := range onnxModel.GetGraph().GetInput() {
+		ctx.ValueInfo[vi.GetName()] = vi
+	}
+	for _, vi := range onnxModel.GetGraph().GetOutput() {
+		ctx.ValueInfo[vi.GetName()] = vi
+	}
 
 	// Build the zerfoo graph
 	builder := graph.NewBuilder[T](engine)
-	// Map ONNX tensor names to the zerfoo nodes that produce them
 	nodeOutputMap := make(map[string]graph.Node[T])
 
 	// Add graph inputs
 	for _, input := range onnxModel.GetGraph().GetInput() {
-		// TODO: Handle shapes properly
-		inputNode := builder.Input([]int{})
+		// Skip initializers, which are also listed as inputs
+		if _, isInitializer := ctx.Initializers[input.GetName()]; isInitializer {
+			continue
+		}
+		inputNode := builder.Input([]int{}) // TODO: Handle shapes
 		nodeOutputMap[input.GetName()] = inputNode
 	}
 
@@ -67,9 +90,12 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 			return nil, fmt.Errorf("invalid constructor type for op_type: %s", nodeDef.GetOpType())
 		}
 
-		// Gather inputs for the current node
 		var inputs []graph.Node[T]
 		for _, inputName := range nodeDef.GetInput() {
+			if _, isInitializer := ctx.Initializers[inputName]; isInitializer {
+				// This input is a constant weight/parameter, not a node output
+				continue
+			}
 			if inputNode, exists := nodeOutputMap[inputName]; exists {
 				inputs = append(inputs, inputNode)
 			} else {
@@ -77,21 +103,18 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 			}
 		}
 
-		zerfooNode, err := constructor(engine, ops, nodeDef, loadedParams)
+		zerfooNode, err := constructor(engine, ops, nodeDef, ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to construct node %s (type %s): %w", nodeDef.GetName(), nodeDef.GetOpType(), err)
 		}
 
-		// Add the new node to the graph
 		builder.AddNode(zerfooNode, inputs...)
 
-		// Map the output tensors of this new node
 		for _, outputName := range nodeDef.GetOutput() {
 			nodeOutputMap[outputName] = zerfooNode
 		}
 	}
 
-	// This is a simplification. We need to identify the correct final output node.
 	finalOutputName := onnxModel.GetGraph().GetOutput()[0].GetName()
 	outputNode, ok := nodeOutputMap[finalOutputName]
 	if !ok {
@@ -103,7 +126,6 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 		return nil, fmt.Errorf("failed to build graph: %w", err)
 	}
 
-	// TODO: Handle embedding layer properly
 	return model.NewModel(nil, zerfooGraph), nil
 }
 
