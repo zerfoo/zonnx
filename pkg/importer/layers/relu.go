@@ -7,19 +7,19 @@ import (
 	"github.com/zerfoo/zerfoo/numeric"
 	"github.com/zerfoo/zerfoo/tensor"
 	"github.com/zerfoo/zonnx/internal/onnx"
-	"github.com/zerfoo/zonnx/pkg/importer"
+	"github.com/zerfoo/zonnx/pkg/registry"
 )
 
 func init() {
-	importer.Register("Relu", BuildReLU[float32])
+	registry.Register("Relu", BuildReLU[float32])
 }
 
 // BuildReLU creates a new ReLU layer from an ONNX node.
 func BuildReLU[T tensor.Numeric](
 	engine compute.Engine[T],
-	_ numeric.Arithmetic[T],
+	ops numeric.Arithmetic[T],
 	_ *onnx.NodeProto,
-	_ *importer.ConversionContext,
+	_ *registry.ConversionContext,
 ) (graph.Node[T], error) {
-	return activations.NewReLU[T](engine), nil
+	return activations.NewReLU[T](engine, ops), nil
 }

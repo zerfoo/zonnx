@@ -10,11 +10,11 @@ import (
 	"github.com/zerfoo/zerfoo/numeric"
 	"github.com/zerfoo/zerfoo/tensor"
 	"github.com/zerfoo/zonnx/internal/onnx"
-	"github.com/zerfoo/zonnx/pkg/importer"
+	"github.com/zerfoo/zonnx/pkg/registry"
 )
 
 func init() {
-	importer.Register("Reshape", BuildReshape[float32])
+	registry.Register("Reshape", BuildReshape[float32])
 }
 
 // BuildReshape creates a new Reshape layer from an ONNX node.
@@ -22,7 +22,7 @@ func BuildReshape[T tensor.Numeric](
 	engine compute.Engine[T],
 	_ numeric.Arithmetic[T],
 	node *onnx.NodeProto,
-	ctx *importer.ConversionContext,
+	ctx *registry.ConversionContext,
 ) (graph.Node[T], error) {
 
 	if len(node.GetInput()) != 2 {
@@ -36,7 +36,7 @@ func BuildReshape[T tensor.Numeric](
 	}
 
 	// Parse the shape tensor data
-	if shapeTensor.GetDataType() != onnx.TensorProto_INT64 {
+	if onnx.TensorProto_DataType(shapeTensor.GetDataType()) != onnx.TensorProto_INT64 {
 		return nil, fmt.Errorf("shape tensor %s must be of type INT64", shapeTensorName)
 	}
 

@@ -11,30 +11,9 @@ import (
 	"github.com/zerfoo/zerfoo/tensor"
 	"github.com/zerfoo/zonnx/internal/onnx"
 	_ "github.com/zerfoo/zonnx/pkg/importer/layers" // Blank import to trigger layer registration
+	"github.com/zerfoo/zonnx/pkg/registry"
 	"google.golang.org/protobuf/proto"
 )
-
-// ConversionContext holds all the graph-level information needed during conversion.
-type ConversionContext struct {
-	Initializers map[string]*onnx.TensorProto
-	ValueInfo    map[string]*onnx.ValueInfoProto
-}
-
-// LayerConstructor defines a function that creates a zerfoo graph.Node from an ONNX NodeProto.
-type LayerConstructor[T tensor.Numeric] func(
-	engine compute.Engine[T],
-	ops numeric.Arithmetic[T],
-	node *onnx.NodeProto,
-	ctx *ConversionContext,
-) (graph.Node[T], error)
-
-// registry holds the mapping from ONNX op_types to our layer constructors.
-var registry = make(map[string]any)
-
-// Register adds a new layer constructor to the registry.
-func Register[T tensor.Numeric](opType string, constructor LayerConstructor[T]) {
-	registry[opType] = constructor
-}
 
 // ConvertOnnxToZmf loads an ONNX model and converts it to a zerfoo model.
 func ConvertOnnxToZmf[T tensor.Numeric](
@@ -42,13 +21,13 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 	engine compute.Engine[T],
 	ops numeric.Arithmetic[T],
 ) (*model.Model[T], error) {
-	onnxModel, err := loadOnnxModel(path)
+	onnxModel, err := LoadOnnxModel(path)
 	if err != nil {
 		return nil, err
 	}
 
 	// Prepare the conversion context
-	ctx := &ConversionContext{
+	ctx := &registry.ConversionContext{
 		Initializers: make(map[string]*onnx.TensorProto),
 		ValueInfo:    make(map[string]*onnx.ValueInfoProto),
 	}
@@ -80,12 +59,12 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 	}
 
 	for _, nodeDef := range onnxModel.GetGraph().GetNode() {
-		constructorAny, ok := registry[nodeDef.GetOpType()]
+		constructorAny, ok := registry.Get(nodeDef.GetOpType())
 		if !ok {
 			return nil, fmt.Errorf("unsupported op_type: %s", nodeDef.GetOpType())
 		}
 
-		constructor, ok := constructorAny.(LayerConstructor[T])
+		constructor, ok := constructorAny.(registry.LayerConstructor[T])
 		if !ok {
 			return nil, fmt.Errorf("invalid constructor type for op_type: %s", nodeDef.GetOpType())
 		}
@@ -118,7 +97,7 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 	finalOutputName := onnxModel.GetGraph().GetOutput()[0].GetName()
 	outputNode, ok := nodeOutputMap[finalOutputName]
 	if !ok {
-		return nil, fmt.Errorf("could not find final output node: %s", finalOutputName)
+			return nil, fmt.Errorf("could not find final output node: %s", finalOutputName)
 	}
 
 	zerfooGraph, err := builder.Build(outputNode)
@@ -129,8 +108,8 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 	return model.NewModel(nil, zerfooGraph), nil
 }
 
-// loadOnnxModel reads an ONNX model file and returns the parsed ModelProto.
-func loadOnnxModel(path string) (*onnx.ModelProto, error) {
+// LoadOnnxModel reads an ONNX model file and returns the parsed ModelProto.
+func LoadOnnxModel(path string) (*onnx.ModelProto, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read ONNX file: %w", err)

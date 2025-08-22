@@ -9,11 +9,11 @@ import (
 	"github.com/zerfoo/zerfoo/numeric"
 	"github.com/zerfoo/zerfoo/tensor"
 	"github.com/zerfoo/zonnx/internal/onnx"
-	"github.com/zerfoo/zonnx/pkg/importer"
+	"github.com/zerfoo/zonnx/pkg/registry"
 )
 
 func init() {
-	importer.Register("Transpose", BuildTranspose[float32])
+	registry.Register("Transpose", BuildTranspose[float32])
 }
 
 // BuildTranspose creates a new Transpose layer from an ONNX node.
@@ -21,7 +21,7 @@ func BuildTranspose[T tensor.Numeric](
 	engine compute.Engine[T],
 	_ numeric.Arithmetic[T],
 	node *onnx.NodeProto,
-	ctx *importer.ConversionContext,
+	ctx *registry.ConversionContext,
 ) (graph.Node[T], error) {
 
 	var perm []int
