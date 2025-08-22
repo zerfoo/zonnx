@@ -1,6 +1,7 @@
 package layers
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/zerfoo/zerfoo/compute"
@@ -24,20 +25,37 @@ func BuildReshape[T tensor.Numeric](
 	ctx *importer.ConversionContext,
 ) (graph.Node[T], error) {
 
-	// In ONNX, the target shape is the second input to the Reshape node.
-	// This input must be a constant initializer tensor for this importer to work.
 	if len(node.GetInput()) != 2 {
 		return nil, fmt.Errorf("ONNX Reshape node %s must have 2 inputs (data, shape)", node.GetName())
 	}
 	shapeTensorName := node.GetInput()[1]
 
-	// TODO: Find the shape tensor in the graph's initializers
-	// and parse its int64 data into a []int slice.
-	// This involves looking through the onnx.GraphProto.Initializer list.
-	// For now, we will use a placeholder.
-	targetShape := []int{1, 768} // Placeholder
+	shapeTensor, ok := ctx.Initializers[shapeTensorName]
+	if !ok {
+		return nil, fmt.Errorf("could not find shape initializer tensor '%s' for Reshape node %s", shapeTensorName, node.GetName())
+	}
 
-	fmt.Printf("Warning: Reshape operator for node %s is using a placeholder shape %v for tensor %s\n", node.GetName(), targetShape, shapeTensorName)
+	// Parse the shape tensor data
+	if shapeTensor.GetDataType() != onnx.TensorProto_INT64 {
+		return nil, fmt.Errorf("shape tensor %s must be of type INT64", shapeTensorName)
+	}
+
+	rawData := shapeTensor.GetRawData()
+	if len(rawData)%8 != 0 {
+		return nil, fmt.Errorf("invalid raw data length for INT64 tensor %s", shapeTensorName)
+	}
+
+	numElements := len(rawData) / 8
+	targetShape := make([]int, numElements)
+	for i := 0; i < numElements; i++ {
+		val := binary.LittleEndian.Uint64(rawData[i*8 : (i+1)*8])
+		targetShape[i] = int(val)
+	}
+
+	// Note: The logic for resolving 0 and -1 in the shape is NOT needed here.
+	// That logic was for cleaning the zerfoo layer itself. The zonnx converter's
+	// primary job is to read the data as-is from the ONNX constant tensor.
+	// If resolution logic were needed, it would be applied here before creating the node.
 
 	return core.NewReshape[T](engine, targetShape), nil
 }
