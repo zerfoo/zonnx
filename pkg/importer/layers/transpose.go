@@ -40,13 +40,25 @@ func BuildTranspose[T tensor.Numeric](
 
 	if !found {
 		// If perm is not present, ONNX specifies reversing the dimensions.
-		// TODO: We need the rank (number of dimensions) of the input tensor here.
-		// For now, we will assume a rank of 3 for demonstration.
-		inputRank := 3
-		fmt.Printf("Warning: Transpose operator for node %s is assuming a placeholder rank of %d\n", node.GetName(), inputRank)
-		perm = make([]int, inputRank)
-		for i := 0; i < inputRank; i++ {
-			perm[i] = inputRank - 1 - i
+		// We need to get the rank of the input tensor to do this.
+		if len(node.GetInput()) == 0 {
+			return nil, fmt.Errorf("Transpose node %s has no inputs", node.GetName())
+		}
+		inputName := node.GetInput()[0]
+		valueInfo, ok := ctx.ValueInfo[inputName]
+		if !ok {
+			return nil, fmt.Errorf("could not find value info for input tensor %s in Transpose node %s", inputName, node.GetName())
+		}
+
+		inputRank := len(valueInfo.GetType().GetTensorType().GetShape().GetDim())
+		if inputRank == 0 {
+			// A scalar has a rank of 0, its transpose is itself.
+			perm = []int{}
+		} else {
+			perm = make([]int, inputRank)
+			for i := 0; i < inputRank; i++ {
+				perm[i] = inputRank - 1 - i
+			}
 		}
 	}
 
