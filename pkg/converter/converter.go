@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/zerfoo/zonnx/internal/onnx"
 	"github.com/zerfoo/zmf"
+	"github.com/zerfoo/zonnx/internal/onnx"
 )
 
 // ONNXToZMF converts an ONNX model to the ZMF format.
@@ -142,12 +142,12 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 	case "Transpose":
 		// Handle perm attribute or input
 		permSet := false
-		
+
 		// First check if there's already a perm attribute (already converted to ZMF)
 		if _, hasPermAttr := zmfNode.Attributes["perm"]; hasPermAttr {
 			permSet = true
 		}
-		
+
 		// If no perm attribute, check for perm input tensor
 		if !permSet && len(onnxNode.GetInput()) > 1 {
 			permInputName := onnxNode.GetInput()[1]
@@ -162,10 +162,10 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 				}
 			}
 		}
-		
+
 		if !permSet {
 			if len(onnxNode.GetInput()) == 0 {
-				return nil, fmt.Errorf("Transpose node '%s' has no inputs to infer permutation from", onnxNode.GetName())
+				return nil, fmt.Errorf("transpose node '%s' has no inputs to infer permutation from", onnxNode.GetName())
 			}
 			inputName := onnxNode.GetInput()[0]
 			info, ok := valueInfos[inputName]
@@ -192,7 +192,7 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 					// we can make reasonable assumptions based on common transformer patterns
 					resolvedShape := make([]int64, len(ints))
 					copy(resolvedShape, ints)
-					
+
 					// Handle common Gemma transformer patterns
 					if len(ints) == 3 && ints[0] == 0 && ints[1] == -1 && ints[2] > 0 {
 						// Pattern: [0, -1, embed_dim] - typically reshaping from [batch, seq_len*embed_dim] to [batch, seq_len, embed_dim]
@@ -206,11 +206,8 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 						// Pattern: [0, -1] - flatten to 2D
 						resolvedShape[0] = 1  // batch size
 						resolvedShape[1] = -1 // keep -1 for inference
-					} else {
-						// For other patterns, keep the original shape but warn about potential issues
-						// In a production system, this would require more sophisticated analysis
 					}
-					
+
 					zmfNode.Attributes["shape"] = &zmf.Attribute{
 						Value: &zmf.Attribute_Ints{Ints: &zmf.Ints{Val: resolvedShape}},
 					}
@@ -277,9 +274,11 @@ func convertAttribute(onnxAttr *onnx.AttributeProto) (*zmf.Attribute, error) {
 	return zmfAttr, nil
 }
 
+/*
 func convertTensor(onnxTensor *onnx.TensorProto) (*zmf.Tensor, error) {
 	return convertTensorWithPath(onnxTensor, "")
 }
+*/
 
 func convertTensorWithPath(onnxTensor *onnx.TensorProto, modelPath string) (*zmf.Tensor, error) {
 	var data []byte
@@ -328,7 +327,7 @@ func loadExternalData(tensor *onnx.TensorProto, modelPath string) ([]byte, error
 	for _, entry := range tensor.GetExternalData() {
 		key := entry.GetKey()
 		value := entry.GetValue()
-		
+
 		switch key {
 		case "location":
 			location = value
@@ -370,7 +369,11 @@ func loadExternalData(tensor *onnx.TensorProto, modelPath string) ([]byte, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to open external data file %s: %w", externalPath, err)
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "Error closing file %s: %v\n", externalPath, cerr)
+		}
+	}()
 
 	// Seek to the offset if specified
 	if offset > 0 {
