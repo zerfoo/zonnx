@@ -2,7 +2,7 @@ package zmf_inspector
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"github.com/zerfoo/zmf"
 	"google.golang.org/protobuf/proto"
@@ -10,7 +10,7 @@ import (
 
 // Load reads and deserializes a ZMF model from a file.
 func Load(file string) (*zmf.Model, error) {
-	data, err := ioutil.ReadFile(file)
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
