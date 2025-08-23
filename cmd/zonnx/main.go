@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings" // Added for strings.ToLower
 
 	"github.com/zerfoo/zonnx/pkg/converter"
 	"github.com/zerfoo/zonnx/pkg/importer"
-	"github.com/zerfoo/zonnx/pkg/zmf_inspector"
+	// "github.com/zerfoo/zonnx/pkg/zmf_inspector" // Removed unused import
 	"google.golang.org/protobuf/proto"
 
 	// Import the downloader package
 	"github.com/zerfoo/zonnx/pkg/downloader"
+	// Import the new inspector package
+	"github.com/zerfoo/zonnx/pkg/inspector"
 )
 
 func main() {
@@ -28,8 +31,8 @@ func main() {
 		handleExport()
 	case "inspect":
 		handleInspect()
-	case "inspect-zmf":
-		handleInspectZMF()
+	// case "inspect-zmf": // Remove inspect-zmf
+	// 	handleInspectZMF()
 	case "convert":
 		handleConvert()
 	case "download": // Add new case for download command
@@ -99,6 +102,9 @@ func handleExport() {
 
 func handleInspect() {
 	inspectCmd := flag.NewFlagSet("inspect", flag.ExitOnError)
+	fileType := inspectCmd.String("type", "", "Type of model to inspect: 'onnx' or 'zmf'")
+	prettyPrint := inspectCmd.Bool("pretty", false, "Pretty print the output (human-friendly)") // Add --pretty flag
+
 	if err := inspectCmd.Parse(os.Args[2:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags for inspect command: %v\n", err)
 		os.Exit(1)
@@ -111,39 +117,43 @@ func handleInspect() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Inspecting ONNX model from: %s\n", inputFile)
-
-	model, err := importer.LoadOnnxModel(inputFile)
-	handleErr(err)
-
-	fmt.Printf("Successfully loaded model with IR version: %d\n", model.GetIrVersion())
-	if len(model.GetOpsetImport()) > 0 {
-		fmt.Printf("Opset version: %d\n", model.GetOpsetImport()[0].GetVersion())
+	// Determine file type
+	detectedType := strings.ToLower(*fileType)
+	if detectedType == "" {
+		ext := strings.ToLower(filepath.Ext(inputFile))
+		switch ext {
+		case ".onnx":
+			detectedType = "onnx"
+		case ".zmf":
+			detectedType = "zmf"
+		default:
+			fmt.Printf("Error: Could not infer file type from extension '%s'. Please specify --type flag.\n", ext)
+			inspectCmd.Usage()
+			os.Exit(1)
+		}
 	}
-	fmt.Printf("Graph has %d nodes.\n", len(model.GetGraph().GetNode()))
-}
 
-func handleInspectZMF() {
-	inspectCmd := flag.NewFlagSet("inspect-zmf", flag.ExitOnError)
-	if err := inspectCmd.Parse(os.Args[2:]); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing flags for inspect-zmf command: %v\n", err)
-		os.Exit(1)
-	}
-	inputFile := inspectCmd.Arg(0)
-
-	if inputFile == "" {
-		fmt.Println("Error: Input file is required for 'inspect-zmf' command.")
+	var err error
+	switch detectedType {
+	case "onnx":
+		err = inspector.InspectONNX(inputFile)
+	case "zmf":
+		err = inspector.InspectZMF(inputFile)
+	default:
+		fmt.Printf("Error: Unsupported model type '%s'. Must be 'onnx' or 'zmf'.\n", detectedType)
 		inspectCmd.Usage()
 		os.Exit(1)
 	}
-
-	fmt.Printf("Inspecting ZMF model from: %s\n", inputFile)
-
-	model, err := zmf_inspector.Load(inputFile)
 	handleErr(err)
 
-	zmf_inspector.Inspect(model)
+	// TODO: Implement --pretty printing based on standardized JSON schema
+	if *prettyPrint {
+		fmt.Println("Pretty printing is not yet implemented.")
+	}
 }
+
+// Removed handleInspectZMF function
+// func handleInspectZMF() { ... }
 
 func handleConvert() {
 	convertCmd := flag.NewFlagSet("convert", flag.ExitOnError)
@@ -227,10 +237,10 @@ func printUsage() {
 	fmt.Println("\nCommands:")
 	fmt.Println("  import <input-file.onnx> [-output <output-file.zmf>]")
 	fmt.Println("  export <input-file.zmf> [-output <output-file.onnx>]")
-	fmt.Println("  inspect <input-file.onnx>")
-	fmt.Println("  inspect-zmf <input-file.zmf>")
+	fmt.Println("  inspect <input-file> [--type <onnx|zmf>] [--pretty]")
+	// fmt.Println("  inspect-zmf <input-file.zmf>") // Removed inspect-zmf usage
 	fmt.Println("  convert <input-file.onnx> [-output <output-file.zmf>]")
-	fmt.Println("  download --model <huggingface-model-id> [--output <output-directory>] [--api-key <your-api-key> | HF_API_KEY=<your-api-key>]") // Update usage
+	fmt.Println("  download --model <huggingface-model-id> [--output <output-directory>] [--api-key <your-api-key> | HF_API_KEY=<your-api-key>]")
 }
 
 func handleErr(err error) {
