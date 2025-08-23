@@ -24,7 +24,6 @@ func BuildReshape[T tensor.Numeric](
 	node *onnx.NodeProto,
 	ctx *registry.ConversionContext,
 ) (graph.Node[T], error) {
-
 	if len(node.GetInput()) != 2 {
 		return nil, fmt.Errorf("ONNX Reshape node %s must have 2 inputs (data, shape)", node.GetName())
 	}

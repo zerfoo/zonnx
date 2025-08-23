@@ -23,7 +23,6 @@ func BuildTranspose[T tensor.Numeric](
 	node *onnx.NodeProto,
 	ctx *registry.ConversionContext,
 ) (graph.Node[T], error) {
-
 	var perm []int
 	found := false
 
@@ -42,7 +41,7 @@ func BuildTranspose[T tensor.Numeric](
 		// If perm is not present, ONNX specifies reversing the dimensions.
 		// We need to get the rank of the input tensor to do this.
 		if len(node.GetInput()) == 0 {
-			return nil, fmt.Errorf("Transpose node %s has no inputs", node.GetName())
+			return nil, fmt.Errorf("transpose node %s has no inputs", node.GetName()) // Fixed capitalization
 		}
 		inputName := node.GetInput()[0]
 		valueInfo, ok := ctx.ValueInfo[inputName]
