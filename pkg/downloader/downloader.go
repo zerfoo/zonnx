@@ -11,10 +11,8 @@ import (
 )
 
 // Changed to var to allow overriding for testing
-var (
-	huggingFaceAPI = "https://huggingface.co/api/models/"
-	huggingFaceCDN = "https://huggingface.co/" // Base URL for direct file downloads
-)
+var huggingFaceAPI = "https://huggingface.co/api/models/"
+var huggingFaceCDN = "https://huggingface.co/" // Base URL for direct file downloads
 
 func init() {
 	if apiURL := os.Getenv("HUGGINGFACE_API_URL"); apiURL != "" {
@@ -57,14 +55,23 @@ func (d *Downloader) Download(modelID string, destination string) (*DownloadResu
 }
 
 // downloadFile downloads a single file from a URL to a local path.
-func downloadFile(url, filePath string) error {
+// It now accepts an optional API key.
+func downloadFile(url, filePath string, apiKey string) error { // Add apiKey parameter
 	// Create the directory if it doesn't exist
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
-	resp, err := http.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req) // Use http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download file from %s: %w", url, err)
 	}
@@ -117,12 +124,15 @@ func copyFile(src io.Reader, dst io.Writer) (int64, error) {
 // HuggingFaceSource implements the ModelSource interface for HuggingFace Hub.
 type HuggingFaceSource struct {
 	client *http.Client
+	apiKey string // Add apiKey field
 }
 
 // NewHuggingFaceSource creates a new HuggingFaceSource.
-func NewHuggingFaceSource() *HuggingFaceSource {
+// It now accepts an optional API key.
+func NewHuggingFaceSource(apiKey string) *HuggingFaceSource {
 	return &HuggingFaceSource{
 		client: &http.Client{},
+		apiKey: apiKey,
 	}
 }
 
@@ -139,7 +149,15 @@ type HuggingFaceModelInfo struct {
 func (h *HuggingFaceSource) DownloadModel(modelID string, destination string) (result *DownloadResult, err error) { // Added named return values
 	apiURL := huggingFaceAPI + modelID
 
-	resp, err := h.client.Get(apiURL)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+	if h.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+h.apiKey)
+	}
+
+	resp, err := h.client.Do(req) // Use h.client.Do(req) instead of h.client.Get(apiURL)
 	if err != nil {
 		err = fmt.Errorf("failed to fetch model info from HuggingFace API: %w", err)
 		return
@@ -149,6 +167,7 @@ func (h *HuggingFaceSource) DownloadModel(modelID string, destination string) (r
 			err = fmt.Errorf("failed to close response body for %s: %w", apiURL, cerr)
 		}
 	}()
+
 
 	if resp.StatusCode != http.StatusOK {
 		err = fmt.Errorf("HuggingFace API returned non-OK status: %s", resp.Status)
@@ -172,7 +191,7 @@ func (h *HuggingFaceSource) DownloadModel(modelID string, destination string) (r
 			downloadURL := huggingFaceCDN + modelID + "/resolve/main/" + rPath // Assuming 'main' branch
 			// Ensure the URL is correctly formed for HuggingFace CDN
 			downloadURL = strings.ReplaceAll(downloadURL, "//resolve/main/", "/resolve/main/")
-			if err = downloadFile(downloadURL, modelPath); err != nil {
+			if err = downloadFile(downloadURL, modelPath, h.apiKey); err != nil { // Pass apiKey
 				err = fmt.Errorf("failed to download ONNX model %s: %w", rPath, err)
 				return
 			}
@@ -183,7 +202,7 @@ func (h *HuggingFaceSource) DownloadModel(modelID string, destination string) (r
 			downloadURL := huggingFaceCDN + modelID + "/resolve/main/" + rPath // Assuming 'main' branch
 			// Ensure the URL is correctly formed for HuggingFace CDN
 			downloadURL = strings.ReplaceAll(downloadURL, "//resolve/main/", "/resolve/main/")
-			if err = downloadFile(downloadURL, tokenizerFilePath); err != nil {
+			if err = downloadFile(downloadURL, tokenizerFilePath, h.apiKey); err != nil { // Pass apiKey
 				err = fmt.Errorf("failed to download tokenizer file %s: %w", rPath, err)
 				return
 			}
