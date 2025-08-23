@@ -175,7 +175,7 @@ func handleConvert() {
 	outBytes, err := proto.Marshal(zmfModel)
 	handleErr(err)
 
-	err = os.WriteFile(*outputFile, outBytes, 0o644) // Replaced ioutil.WriteFile with os.WriteFile
+	err = os.WriteFile(*outputFile, outBytes, 0644)
 	handleErr(err)
 
 	fmt.Printf("Successfully converted and saved model to: %s\n", *outputFile)
@@ -185,6 +185,7 @@ func handleDownload() {
 	downloadCmd := flag.NewFlagSet("download", flag.ExitOnError)
 	modelID := downloadCmd.String("model", "", "HuggingFace model ID (e.g., 'openai/whisper-tiny.en')")
 	outputPath := downloadCmd.String("output", ".", "Output directory for downloaded files")
+	cliApiKey := downloadCmd.String("api-key", "", "Optional HuggingFace API key for authenticated downloads") // Renamed to avoid conflict
 
 	if err := downloadCmd.Parse(os.Args[2:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags for download command: %v\n", err)
@@ -197,8 +198,14 @@ func handleDownload() {
 		os.Exit(1)
 	}
 
-	// Create the downloader with HuggingFaceSource
-	hfSource := downloader.NewHuggingFaceSource()
+	// Determine the API key to use
+	apiKey := *cliApiKey
+	if apiKey == "" { // If flag is not provided, check environment variable
+		apiKey = os.Getenv("HF_API_KEY")
+	}
+
+	// Create the downloader with HuggingFaceSource, passing the API key
+	hfSource := downloader.NewHuggingFaceSource(apiKey) // Use the determined apiKey
 	d := downloader.NewDownloader(hfSource)
 
 	fmt.Printf("Downloading model '%s' to '%s'...\n", *modelID, *outputPath)
@@ -223,7 +230,7 @@ func printUsage() {
 	fmt.Println("  inspect <input-file.onnx>")
 	fmt.Println("  inspect-zmf <input-file.zmf>")
 	fmt.Println("  convert <input-file.onnx> [-output <output-file.zmf>]")
-	fmt.Println("  download --model <huggingface-model-id> [--output <output-directory>]") // Add new command usage
+	fmt.Println("  download --model <huggingface-model-id> [--output <output-directory>] [--api-key <your-api-key> | HF_API_KEY=<your-api-key>]") // Update usage
 }
 
 func handleErr(err error) {
