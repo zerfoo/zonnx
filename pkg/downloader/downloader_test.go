@@ -111,11 +111,13 @@ func Test_downloadFile(t *testing.T) {
 		}
 	}()
 
+
 	tests := []struct {
 		name           string
 		serverHandler  http.HandlerFunc
 		fileName       string
 		expectedErrMsg string
+		apiKey         string // Add apiKey field
 	}{
 		{
 			name: "Successful download",
@@ -126,14 +128,40 @@ func Test_downloadFile(t *testing.T) {
 			},
 			fileName:       "test.txt",
 			expectedErrMsg: "",
+			apiKey:         "",
 		},
 		{
 			name: "HTTP error status",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				http.Error(w, "Not Found", http.StatusNotFound)
+				http.Error(w, "Not Found", http.StatusNotFound);
 			},
 			fileName:       "error.txt",
 			expectedErrMsg: "status code 404",
+			apiKey:         "",
+		},
+		{
+			name: "Authenticated download success",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer test-api-key" {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				if _, err := fmt.Fprint(w, "authenticated content"); err != nil {
+					t.Errorf("Error writing to response writer: %v", err)
+				}
+			},
+			fileName:       "auth.txt",
+			expectedErrMsg: "",
+			apiKey:         "test-api-key",
+		},
+		{
+			name: "Authenticated download unauthorized",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized) // Always return Unauthorized for this test
+			},
+			fileName:       "auth-fail.txt",
+			expectedErrMsg: "status code 401 Unauthorized",
+			apiKey:         "wrong-key", // The actual key doesn't matter for the server's response in this simplified test
 		},
 	}
 
@@ -143,11 +171,12 @@ func Test_downloadFile(t *testing.T) {
 			defer server.Close()
 
 			filePath := filepath.Join(tempDir, tt.fileName)
-			err := downloadFile(server.URL, filePath)
+			err := downloadFile(server.URL, filePath, tt.apiKey) // Pass apiKey
 
 			if tt.expectedErrMsg != "" {
 				if err == nil || !bytes.Contains([]byte(err.Error()), []byte(tt.expectedErrMsg)) {
 					t.Errorf("Expected error containing \"%s\", got \"%v\"", tt.expectedErrMsg, err)
+
 				}
 				// Ensure file was not created or is empty on error
 				_, fileErr := os.Stat(filePath)
@@ -162,9 +191,14 @@ func Test_downloadFile(t *testing.T) {
 				if readErr != nil {
 					t.Fatalf("Failed to read downloaded file: %v", readErr)
 				}
-				if string(content) != "test content" {
-					t.Errorf("Downloaded content mismatch: got \"%s\", want \"test content\"", string(content))
-				}
+				// Adjust expected content for authenticated test case
+			expectedContent := "test content"
+			if tt.apiKey != "" && tt.expectedErrMsg == "" {
+				expectedContent = "authenticated content"
+			}
+			if string(content) != expectedContent {
+				t.Errorf("Downloaded content mismatch: got \"%s\", want \"%s\"", string(content), expectedContent)
+			}
 			}
 		})
 	}
@@ -231,6 +265,7 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 		}
 	}()
 
+
 	tests := []struct {
 		name           string
 		modelID        string
@@ -239,6 +274,7 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 		expectedModel  string
 		expectedTokens []string
 		expectedError  string
+		apiKey         string // Add apiKey field
 	}{
 		{
 			name:    "Successful download of ONNX and tokenizer",
@@ -268,6 +304,7 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 			expectedModel:  "model.onnx",
 			expectedTokens: []string{"tokenizer.json", "config.json"},
 			expectedError:  "",
+			apiKey:         "",
 		},
 		{
 			name:    "Model not found on HuggingFace API",
@@ -279,6 +316,7 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 			expectedModel:  "",
 			expectedTokens: nil,
 			expectedError:  "HuggingFace API returned non-OK status: 404 Not Found",
+			apiKey:         "",
 		},
 		{
 			name:    "No ONNX model in repository",
@@ -301,6 +339,7 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 			expectedModel:  "",
 			expectedTokens: nil,
 			expectedError:  "no ONNX model found for model ID: test-org/no-onnx",
+			apiKey:         "",
 		},
 		{
 			name:    "CDN download failure",
@@ -317,6 +356,71 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 			expectedModel:  "",
 			expectedTokens: nil,
 			expectedError:  "failed to download ONNX model model.onnx: failed to download file from", // Partial match
+			apiKey:         "",
+		},
+		{
+			name:    "Authenticated download of ONNX and tokenizer",
+			modelID: "test-org/auth-model",
+			apiHandler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer test-api-key" {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := fmt.Fprint(w, `{"modelId": "test-org/auth-model","siblings": [{"rfilename": "model.onnx"},{"rfilename": "tokenizer.json"}]}`); err != nil {
+					t.Errorf("Error writing to response writer: %v", err)
+				}
+			},
+			cdnHandler: func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer test-api-key" {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				if strings.HasSuffix(r.URL.Path, "model.onnx") {
+					if _, err := fmt.Fprint(w, "authenticated onnx content"); err != nil {
+						t.Errorf("Error writing to response writer: %v", err)
+					}
+				} else if strings.HasSuffix(r.URL.Path, "tokenizer.json") {
+					if _, err := fmt.Fprint(w, "authenticated tokenizer content"); err != nil {
+						t.Errorf("Error writing to response writer: %v", err)
+					}
+				} else {
+					http.Error(w, "Not Found", http.StatusNotFound)
+				}
+			},
+			expectedModel:  "model.onnx",
+			expectedTokens: []string{"tokenizer.json"},
+			expectedError:  "",
+			apiKey:         "test-api-key",
+		},
+		{
+			name:    "Authenticated download unauthorized API",
+			modelID: "test-org/auth-fail-api",
+			apiHandler: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			},
+			cdnHandler:     nil, // Not used in this case
+			expectedModel:  "",
+			expectedTokens: nil,
+			expectedError:  "HuggingFace API returned non-OK status: 401 Unauthorized",
+			apiKey:         "wrong-api-key",
+		},
+		{
+			name:    "Authenticated download unauthorized CDN",
+			modelID: "test-org/auth-fail-cdn",
+			apiHandler: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if _, err := fmt.Fprint(w, `{"modelId": "test-org/auth-fail-cdn","siblings": [{"rfilename": "model.onnx"}]}`); err != nil {
+					t.Errorf("Error writing to response writer: %v", err)
+				}
+			},
+			cdnHandler: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			},
+			expectedModel:  "",
+			expectedTokens: nil,
+			expectedError:  "failed to download ONNX model model.onnx: failed to download file from",
+			apiKey:         "wrong-api-key",
 		},
 	}
 
@@ -331,12 +435,12 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 			if tt.cdnHandler != nil {
 				cdnServer = httptest.NewServer(tt.cdnHandler)
 			} else {
-				// Provide a dummy handler if no specific CDN behavior is needed
 				cdnServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "Not Found", http.StatusNotFound)
 				}))
 			}
 			defer cdnServer.Close()
+
 
 			// Temporarily override constants for testing
 			oldHuggingFaceAPI := huggingFaceAPI
@@ -349,7 +453,7 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 				huggingFaceCDN = oldHuggingFaceCDN
 			}()
 
-			hfSource := NewHuggingFaceSource()
+			hfSource := NewHuggingFaceSource(tt.apiKey) // Pass apiKey
 			result, err := hfSource.DownloadModel(tt.modelID, tempDir)
 
 			if tt.expectedError != "" {
