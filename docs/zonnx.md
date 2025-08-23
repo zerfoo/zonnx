@@ -12,20 +12,19 @@ This document provides a comprehensive design for the `zerfoo/zonnx` tool and do
 
 ---
 
-### 2. Core Architecture: Native Protobuf Parsing
+### 2. Core Architecture: Native Protobuf Parsing & Model Downloading
 
 The initial approach of using the official C++ `onnxruntime` library via a CGo wrapper was **abandoned**. This decision was made due to:
 *   **Extreme Build Complexity:** Managing the `onnxruntime` dependency, its specific versioning, and the associated build flags was fragile and platform-dependent.
 *   **Versioning Conflicts:** The ONNX format is itself versioned. A specific build of `onnxruntime` is tied to a specific ONNX opset version. This created a high risk of version mismatches between the library and the models we needed to parse.
 
-The new, successful architecture is based on a **native Go protobuf parser**.
+The new, successful architecture is based on a **native Go protobuf parser** and a **flexible model downloading system**.
 
 1.  **ONNX is a Protobuf:** An `.onnx` file is fundamentally a serialized Google Protocol Buffer (protobuf) message.
 2.  **Official `.proto` Definition:** The official ONNX repository provides the `onnx.proto` file that formally defines the structure of an ONNX model.
 3.  **Native Go Compilation:** By compiling this `onnx.proto` file using `protoc` and the standard Go protobuf plugin, we generate native Go structs that perfectly mirror the ONNX model structure.
 4.  **Pure Go Deserialization:** The `zonnx` tool can now read the bytes of any `.onnx` file and deserialize them directly into these Go structs using the standard `google.golang.org/protobuf/proto` library.
-
-This approach is vastly superior. It is faster, has no external dependencies, is completely portable, and gives us direct, type-safe access to the entire ONNX model graph in pure Go.
+5.  **Extensible Model Downloader:** A new `pkg/downloader` package provides an interface-based system for downloading models from various sources. This allows for easy extension to new model hubs in the future. The initial implementation targets HuggingFace Hub.
 
 ---
 
@@ -50,6 +49,18 @@ Prints a summary of an ONNX model's structure.
 zonnx inspect <input-file.onnx>
 ```
 
+#### 3.3. `download` Command
+
+Downloads an ONNX model and its associated tokenizer files from HuggingFace Hub.
+
+```shell
+zonnx download --model <huggingface-model-id> [--output <output-directory>]
+```
+*   `--model` (string, required): The ID of the HuggingFace model to download (e.g., `openai/whisper-tiny.en`).
+*   `--output` (string, optional): The directory where the model and tokenizer files will be saved. Defaults to the current directory (`.`).
+
+The `download` command automatically identifies and fetches common tokenizer-related files (e.g., `tokenizer.json`, `vocab.txt`) found in the same HuggingFace repository as the specified model.
+
 ---
 
 ### 4. Conversion Logic: ONNX-to-ZMF
@@ -63,21 +74,35 @@ The conversion process is now a straightforward traversal of the native Go struc
 
 ---
 
-### 5. Validation and Key Learnings
+### 5. Model Downloading Logic
 
-*   **Successful Conversion:** The `zonnx` tool has been successfully used to parse and convert the entire Google Gemma 3 ONNX model into the ZMF format. This serves as the primary validation of the native parsing architecture.
+The model downloading functionality is encapsulated within the `pkg/downloader` package, designed for extensibility.
 
-*   **Proto Versioning:** During initial testing with an older `mnist-8.onnx` model, we encountered parsing errors (`Model graph is nil`). This was traced to a **version mismatch** between the `onnx.proto` file we were using (from the `main` branch) and the older opset version of the test model. This highlights the importance of aligning the `.proto` definition with the target model's opset version. Since our primary target is modern, this was not a blocker, but it is a critical learning for future compatibility.
+1.  **`ModelSource` Interface:** Defines a generic interface for any model source, abstracting away the specifics of different platforms.
+2.  **`HuggingFaceSource` Implementation:** Provides a concrete implementation of `ModelSource` for HuggingFace Hub. It interacts with the HuggingFace API to list files and constructs direct download URLs.
+3.  **File Discovery:** When a model ID is provided, `HuggingFaceSource` queries the HuggingFace API to get a list of all files (siblings) in the repository.
+4.  **Targeted Download:** It then filters these files, identifying the primary ONNX model file (`.onnx` extension) and common tokenizer files (e.g., `tokenizer.json`, `vocab.txt`, `.txt` files that might contain tokenizer data).
+5.  **Direct HTTP Download:** Each identified file is downloaded using standard Go `net/http` calls to the HuggingFace CDN.
+6.  **Output:** Downloaded files are saved to the specified output directory, maintaining their original filenames.
 
 ---
 
-### 6. Project Structure
+### 6. Validation and Key Learnings
+
+*   **Successful Conversion:** The `zonnx` tool has been successfully used to parse and convert the entire Google Gemma 3 ONNX model into the ZMF format. This serves as the primary validation of the native parsing architecture.
+*   **Proto Versioning:** During initial testing with an older `mnist-8.onnx` model, we encountered parsing errors (`Model graph is nil`). This was traced to a **version mismatch** between the `onnx.proto` file we were using (from the `main` branch) and the older opset version of the test model. This highlights the importance of aligning the `.proto` definition with the target model's opset version. Since our primary target is modern, this was not a blocker, but it is a critical learning for future compatibility.
+*   **Robust Download Mechanism:** The `pkg/downloader` design allows for easy integration of new model sources without modifying core CLI logic. The use of direct HTTP downloads ensures minimal external dependencies and maximum portability.
+
+---
+
+### 7. Project Structure
 
 ```
 /zonnx
 ├── cmd/
 │   └── zonnx/
 │       └── main.go         # CLI entry point
+│       └── zonnx_test.go   # Integration tests for the CLI
 ├── docs/
 │   └── zonnx.md        # This design document
 ├── internal/
@@ -87,8 +112,11 @@ The conversion process is now a straightforward traversal of the native Go struc
 ├── pkg/
 │   ├── importer/
 │   │   └── importer.go     # Core ONNX file loading logic
-│   └── converter/
-│       └── converter.go    # ONNX -> ZMF conversion logic
+│   ├── converter/
+│   │   └── converter.go    # ONNX -> ZMF conversion logic
+│   └── downloader/
+│       └── downloader.go   # Core model downloading logic and HuggingFace implementation
+│       └── downloader_test.go # Unit tests for downloader package
 ├── go.mod
 └── ...
 ```
