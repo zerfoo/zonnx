@@ -97,7 +97,7 @@ func ConvertOnnxToZmf[T tensor.Numeric](
 	finalOutputName := onnxModel.GetGraph().GetOutput()[0].GetName()
 	outputNode, ok := nodeOutputMap[finalOutputName]
 	if !ok {
-			return nil, fmt.Errorf("could not find final output node: %s", finalOutputName)
+		return nil, fmt.Errorf("could not find final output node: %s", finalOutputName)
 	}
 
 	zerfooGraph, err := builder.Build(outputNode)
