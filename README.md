@@ -30,27 +30,33 @@ Downloads an ONNX model and its associated tokenizer files from HuggingFace Hub.
 **Syntax:**
 
 ```bash
-./zonnx download --model <huggingface-model-id> [--output <output-directory>]
+./zonnx download --model <huggingface-model-id> [--output <output-directory>] [--api-key <your-api-key>]
 ```
 
 **Arguments:**
 
 - `--model <huggingface-model-id>`: (Required) The ID of the HuggingFace model to download (e.g., `openai/whisper-tiny.en`).
 - `--output <output-directory>`: (Optional) The directory where the model and tokenizer files will be saved. Defaults to the current directory (`.`).
+- `--api-key <your-api-key>`: (Optional) Your HuggingFace API key for authenticated downloads.
 
-**Examples:**
+**API Key Configuration:**
 
-Download a model to the current directory:
+For models that require authentication (e.g., private models or models with restricted access), you can provide your HuggingFace API key in one of two ways:
 
-```bash
-./zonnx download --model openai/whisper-tiny.en
-```
+1.  **Using the `--api-key` flag:**
+    Pass your API key directly as a command-line argument:
+    ```bash
+    ./zonnx download --model google/gemma-2-2b-it --api-key hf_YOUR_API_KEY
+    ```
+    Replace `hf_YOUR_API_KEY` with your actual HuggingFace API key.
 
-Download a model to a specific directory:
-
-```bash
-./zonnx download --model facebook/bart-large-cnn --output ./models/bart
-```
+2.  **Using the `HF_API_KEY` environment variable:**
+    Set the `HF_API_KEY` environment variable before running the `zonnx` command:
+    ```bash
+    export HF_API_KEY=hf_YOUR_API_KEY
+    ./zonnx download --model google/gemma-2-2b-it
+    ```
+    The `--api-key` flag takes precedence over the `HF_API_KEY` environment variable if both are provided.
 
 When a model is downloaded, `zonnx` will automatically attempt to identify and download common tokenizer-related files (like `tokenizer.json`, `vocab.txt`, etc.) found in the same HuggingFace repository. These files will be saved alongside the ONNX model in the specified output directory.
 
