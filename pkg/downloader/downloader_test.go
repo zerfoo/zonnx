@@ -1,7 +1,13 @@
 package downloader
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -87,6 +93,125 @@ func TestDownloader_Download(t *testing.T) {
 				}
 				if len(result.TokenizerPaths) != len(tt.mockResult.TokenizerPaths) {
 					t.Errorf("Expected %d tokenizer paths, got %d", len(tt.mockResult.TokenizerPaths), len(result.TokenizerPaths))
+				}
+			}
+		})
+	}
+}
+
+func Test_downloadFile(t *testing.T) {
+	// Create a temporary directory for testing downloads
+	tempDir, err := os.MkdirTemp("", "download_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer func() {
+		if cerr := os.RemoveAll(tempDir); cerr != nil {
+			t.Errorf("Error removing temp dir %s: %v", tempDir, cerr)
+		}
+	}()
+
+
+	tests := []struct {
+		name           string
+		serverHandler  http.HandlerFunc
+		fileName       string
+		expectedErrMsg string
+	}{
+		{
+			name: "Successful download",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				if _, err := fmt.Fprint(w, "test content"); err != nil {
+					t.Errorf("Error writing to response writer: %v", err)
+				}
+			},
+			fileName:       "test.txt",
+			expectedErrMsg: "",
+		},
+		{
+			name: "HTTP error status",
+			serverHandler: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "Not Found", http.StatusNotFound);
+			},
+			fileName:       "error.txt",
+			expectedErrMsg: "status code 404",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.serverHandler)
+			defer server.Close()
+
+			filePath := filepath.Join(tempDir, tt.fileName)
+			err := downloadFile(server.URL, filePath)
+
+			if tt.expectedErrMsg != "" {
+				if err == nil || !bytes.Contains([]byte(err.Error()), []byte(tt.expectedErrMsg)) {
+					t.Errorf("Expected error containing \"%s\", got \"%v\"", tt.expectedErrMsg, err)
+				}
+				// Ensure file was not created or is empty on error
+				_, fileErr := os.Stat(filePath)
+				if fileErr == nil || !os.IsNotExist(fileErr) {
+					t.Errorf("File %s should not exist or be empty on error, but it does", filePath)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error, but got: %v", err)
+				}
+				content, readErr := os.ReadFile(filePath)
+				if readErr != nil {
+					t.Fatalf("Failed to read downloaded file: %v", readErr)
+				}
+				if string(content) != "test content" {
+					t.Errorf("Downloaded content mismatch: got \"%s\", want \"test content\"", string(content))
+				}
+			}
+		})
+	}
+}
+
+func Test_copyFile(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		expectedBytes int64
+		expectedError bool
+	}{
+		{
+			name:          "Empty content",
+			input:         "",
+			expectedBytes: 0,
+			expectedError: false,
+		},
+		{
+			name:          "Some content",
+			input:         "hello world",
+			expectedBytes: 11,
+			expectedError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := bytes.NewBufferString(tt.input)
+			dst := &bytes.Buffer{}
+
+			n, err := copyFile(src, dst)
+
+			if tt.expectedError {
+				if err == nil {
+					t.Errorf("Expected an error, but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error, but got: %v", err)
+				}
+				if n != tt.expectedBytes {
+					t.Errorf("Expected %d bytes copied, got %d", tt.expectedBytes, n)
+				}
+				if dst.String() != tt.input {
+					t.Errorf("Copied content mismatch: got \"%s\", want \"%s\"", dst.String(), tt.input)
 				}
 			}
 		})
