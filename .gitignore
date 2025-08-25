@@ -35,3 +35,8 @@ go.work.sum
 # Ignore only the root-level 'zonnx' binary, not directories like cmd/zonnx/
 /zonnx
 model.zmf
+
+# Local build artifacts
+/main
+/cmd/zonnx/zonnx
+/cmd/zonnx/zonnx-converter.log
