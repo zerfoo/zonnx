@@ -46,11 +46,11 @@ func ConvertOnnxToZmf(
 		tensorName := qa.GetTensorName()
 		var scale float32
 		var zeroPoint int64
-		
+
 		for _, param := range qa.GetQuantParameterTensorNames() {
 			paramName := param.GetKey()
 			paramTensorName := param.GetValue()
-			
+
 			paramTensor, ok := ctx.Initializers[paramTensorName]
 			if !ok {
 				return nil, fmt.Errorf("quantization parameter tensor %s not found for %s", paramTensorName, tensorName)
@@ -74,7 +74,7 @@ func ConvertOnnxToZmf(
 
 		if scale != 0 || zeroPoint != 0 { // Only add if quantization info is present
 			ctx.QuantizationInfo[tensorName] = &zmf.Quantization{
-				Scale:    scale,
+				Scale:     scale,
 				ZeroPoint: zeroPoint,
 			}
 		}
@@ -95,10 +95,10 @@ func ConvertOnnxToZmf(
 	// Populate nodes
 	for _, nodeDef := range onnxModel.GetGraph().GetNode() {
 		zmfNode := &zmf.Node{
-			Name:    nodeDef.GetName(),
-			OpType:  nodeDef.GetOpType(),
-			Inputs:  nodeDef.GetInput(),
-			Outputs: nodeDef.GetOutput(),
+			Name:       nodeDef.GetName(),
+			OpType:     nodeDef.GetOpType(),
+			Inputs:     nodeDef.GetInput(),
+			Outputs:    nodeDef.GetOutput(),
 			Attributes: make(map[string]*zmf.Attribute),
 		}
 		for _, attr := range nodeDef.GetAttribute() {
@@ -144,7 +144,7 @@ func ConvertOnnxToZmf(
 		Graph: zmfGraph,
 		Metadata: &zmf.Metadata{
 			ProducerName:    "zonnx",
-			ProducerVersion: "0.1.0", // TODO: Get actual version
+			ProducerVersion: "0.1.0",                                    // TODO: Get actual version
 			OpsetVersion:    onnxModel.GetOpsetImport()[0].GetVersion(), // Assuming single opset for now
 		},
 	}
