@@ -32,5 +32,6 @@ go.work.sum
 # .vscode/
 
 # Generated files
-zonnx
+# Ignore only the root-level 'zonnx' binary, not directories like cmd/zonnx/
+/zonnx
 model.zmf
