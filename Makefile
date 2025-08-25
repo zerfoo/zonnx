@@ -12,7 +12,14 @@ lint-fix:
 	golangci-lint run --fix
 
 format:
-	go fmt ./...
+	@echo "🎨 Applying code formatters..."
+	@echo "  - Standard Go formatting..."
+	@gofmt -w .
+	@echo "  - Organizing imports..."
+	@goimports -w .
+	@echo "  - Strict formatting with gofumpt..."
+	@gofumpt -w . 2>/dev/null || echo "    (gofumpt not available, skipping)"
+	@echo "✅ Code formatting complete"
 
 build:
 	mkdir -p bin
