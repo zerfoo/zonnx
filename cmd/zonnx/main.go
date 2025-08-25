@@ -72,7 +72,8 @@ func handleImport() {
 	}
 
 	if *outputFile == "" {
-		*outputFile = filepath.Base(inputFile[:len(inputFile)-len(filepath.Ext(inputFile))]) + ".zmf"
+		base := strings.TrimSuffix(filepath.Base(inputFile), filepath.Ext(inputFile))
+		*outputFile = filepath.Join(filepath.Dir(inputFile), base+".zmf")
 	}
 
 	fmt.Printf("Importing ONNX model from: %s\n", inputFile)
@@ -171,7 +172,23 @@ func handleConvert() {
 	convertCmd := flag.NewFlagSet("convert", flag.ExitOnError)
 	outputFile := convertCmd.String("output", "", "Path for the converted ZMF file. (optional)")
 
-	if err := convertCmd.Parse(os.Args[2:]); err != nil {
+	// Normalize aliases for stdlib flag parsing (accept --output as an alias for -output)
+	rawArgs := os.Args[2:]
+	normalizedArgs := make([]string, 0, len(rawArgs))
+	for _, a := range rawArgs {
+		if a == "--output" {
+			normalizedArgs = append(normalizedArgs, "-output")
+			continue
+		}
+		if strings.HasPrefix(a, "--output=") {
+			val := strings.TrimPrefix(a, "--output=")
+			normalizedArgs = append(normalizedArgs, "-output="+val)
+			continue
+		}
+		normalizedArgs = append(normalizedArgs, a)
+	}
+
+	if err := convertCmd.Parse(normalizedArgs); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags for convert command: %v\n", err)
 		os.Exit(1)
 	}
@@ -184,8 +201,11 @@ func handleConvert() {
 	}
 
 	if *outputFile == "" {
-		*outputFile = filepath.Base(inputFile[:len(inputFile)-len(filepath.Ext(inputFile))]) + ".zmf"
+		base := strings.TrimSuffix(filepath.Base(inputFile), filepath.Ext(inputFile))
+		*outputFile = filepath.Join(filepath.Dir(inputFile), base+".zmf")
 	}
+
+	fmt.Printf("Converting ONNX model from: %s\n", inputFile)
 
 	// Use the refactored importer.ConvertOnnxToZmf directly
 	zmfModel, err := importer.ConvertOnnxToZmf(inputFile)
@@ -194,6 +214,13 @@ func handleConvert() {
 	// Serialize the ZMF model to a file
 	outBytes, err := proto.Marshal(zmfModel)
 	handleErr(err)
+
+	// Ensure parent directories exist for the output path
+	if dir := filepath.Dir(*outputFile); dir != "." {
+		if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
+			handleErr(mkErr)
+		}
+	}
 
 	err = os.WriteFile(*outputFile, outBytes, 0o644)
 	handleErr(err)
