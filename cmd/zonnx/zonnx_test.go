@@ -71,7 +71,7 @@ func TestDownloadCommand(t *testing.T) {
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_,_ = fmt.Fprint(w, `{"modelId": "test-org/private-model-flag","siblings": [{"rfilename": "model.onnx"},{"rfilename": "tokenizer.json"}]}`)
+				_, _ = fmt.Fprint(w, `{"modelId": "test-org/private-model-flag","siblings": [{"rfilename": "model.onnx"},{"rfilename": "tokenizer.json"}]}`)
 			},
 			cdnHandler: func(w http.ResponseWriter, r *http.Request) {
 				if r.Header.Get("Authorization") != "Bearer test-api-key-flag" {
