@@ -181,6 +181,20 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 				Value: &zmf.Attribute_Ints{Ints: &zmf.Ints{Val: perm}},
 			}
 		}
+	case "GroupQueryAttention":
+		// Infer model_dim from the input tensor shape.
+		if len(onnxNode.GetInput()) > 0 {
+			inputName := onnxNode.GetInput()[0]
+			if info, ok := valueInfos[inputName]; ok {
+				shape := info.GetType().GetTensorType().GetShape().GetDim()
+				if len(shape) > 0 {
+					modelDim := shape[len(shape)-1].GetDimValue()
+					zmfNode.Attributes["model_dim"] = &zmf.Attribute{
+						Value: &zmf.Attribute_I{I: modelDim},
+					}
+				}
+			}
+		}
 	case "Reshape":
 		// The second input to Reshape is the 'shape' tensor.
 		if len(onnxNode.GetInput()) > 1 {
@@ -269,7 +283,7 @@ func convertAttribute(onnxAttr *onnx.AttributeProto) (*zmf.Attribute, error) {
 		}
 		zmfAttr.Value = &zmf.Attribute_Strings{Strings: &zmf.Strings{Val: strings}}
 	default:
-		return nil, nil
+		return nil, fmt.Errorf("unsupported attribute type: %v", onnxAttr.GetType())
 	}
 	return zmfAttr, nil
 }
@@ -317,7 +331,6 @@ func convertTensorWithPath(onnxTensor *onnx.TensorProto, modelPath string) (*zmf
 	return zmfTensor, nil
 }
 
-// loadExternalData loads tensor data from external files
 func loadExternalData(tensor *onnx.TensorProto, modelPath string) ([]byte, error) {
 	var location string
 	var offset int64
