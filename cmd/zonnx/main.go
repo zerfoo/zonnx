@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings" // Added for strings.ToLower
 
-	
 	"github.com/zerfoo/zonnx/pkg/importer"
 	// "github.com/zerfoo/zonnx/pkg/zmf_inspector" // Removed unused import
 	"google.golang.org/protobuf/proto"
@@ -20,7 +19,7 @@ import (
 )
 
 func main() {
-	logFile, err := os.OpenFile("zonnx-converter.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	logFile, err := os.OpenFile("zonnx-converter.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
 		os.Exit(1)
@@ -36,7 +35,6 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
-
 
 	switch os.Args[1] {
 	case "import":
@@ -197,7 +195,7 @@ func handleConvert() {
 	outBytes, err := proto.Marshal(zmfModel)
 	handleErr(err)
 
-	err = os.WriteFile(*outputFile, outBytes, 0644)
+	err = os.WriteFile(*outputFile, outBytes, 0o644)
 	handleErr(err)
 
 	fmt.Printf("Successfully converted and saved model to: %s\n", *outputFile)
