@@ -4,10 +4,23 @@ This tool is a standalone command-line utility responsible for converting machin
 
 ## Features
 
-- **ONNX to ZMF Conversion**: Convert ONNX models to the Zerfoo Model Format.
+- **ONNX to ZMF Conversion**: Convert ONNX models to the Zerfoo Model Format, ensuring a clean and decoupled representation that is independent of the `zerfoo` runtime.
 - **ZMF to ONNX Export**: Export ZMF models back to ONNX format.
 - **Model Inspection**: Inspect details of ONNX and ZMF models.
 - **HuggingFace Model Download**: Download ONNX models and their associated tokenizer files directly from HuggingFace Hub.
+
+## Architectural Principles
+
+`zonnx` is designed as a standalone model converter, strictly decoupled from the `zerfoo` runtime. Its primary responsibility is to transform ONNX models into the Zerfoo Model Format (ZMF), which serves as the universal intermediate representation for `zerfoo`.
+
+Key principles:
+
+- **ZMF-Only Emission**: `zonnx` emits only ZMF models. It does not contain any `zerfoo` runtime code, graph building logic, or direct dependencies on `zerfoo`'s internal components (e.g., `compute`, `graph`, `model`, `numeric`, `tensor`).
+- **Explicit ZMF Schema**: The ZMF schema is designed to be explicit, capturing all necessary model attributes and shapes directly, without relying on runtime inference of ONNX rules.
+- **No `zerfoo` Imports**: The `zonnx` codebase (outside of documentation, tests, and examples) must not import any packages from `github.com/zerfoo/zerfoo`.
+- **No ONNX in `zerfoo`**: Conversely, the `zerfoo` runtime must not contain any ONNX-specific code or dependencies. It consumes only ZMF models.
+
+This strict separation ensures modularity, independent development, and maintainability of both the converter and the runtime.
 
 ## Usage
 
