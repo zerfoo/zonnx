@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zerfoo/zonnx/internal/onnx"
 	"github.com/zerfoo/zmf"
+	"github.com/zerfoo/zonnx/internal/onnx"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -31,7 +31,7 @@ func createDummyOnnxModel(t *testing.T, dir, filename string) string {
 		t.Fatalf("Failed to marshal dummy ONNX model: %v", err)
 	}
 	filePath := filepath.Join(dir, filename)
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
 		t.Fatalf("Failed to write dummy ONNX model: %v", err)
 	}
 	return filePath
@@ -57,7 +57,7 @@ func createDummyZmfModel(t *testing.T, dir, filename string) string {
 		t.Fatalf("Failed to marshal dummy ZMF model: %v", err)
 	}
 	filePath := filepath.Join(dir, filename)
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
 		t.Fatalf("Failed to write dummy ZMF model: %v", err)
 	}
 	return filePath
