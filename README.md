@@ -159,8 +159,9 @@ Zerfoo Model Format (ZMF) is a compact, explicit representation designed for fas
 
 ## Development
 
-- Lint: `golangci-lint run`
-- Test: `go test ./...`
-- Format: `go fmt ./...`
+- Test: `make test` (runs `go test ./...`)
+- Lint: `make lint` (runs `golangci-lint run`)
+- Lint (auto-fix): `make lint-fix`
+- Format: `make format` (gofmt + goimports + gofumpt if available)
 
 The codebase is intentionally free of `github.com/zerfoo/zerfoo` imports in conversion paths to preserve a strict boundary between conversion and runtime.
