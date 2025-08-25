@@ -50,12 +50,12 @@ Notes:
 # 1) Download an ONNX model and tokenizer files from HuggingFace
 zonnx download --model google/gemma-2-2b-it --output ./models
 
-# 2) Convert ONNX → ZMF
-zonnx convert ./models/model.onnx --output ./models/model.zmf
+# 2) Convert ONNX → ZMF (flags must come before positional args)
+zonnx convert -output ./models/model.zmf ./models/model.onnx
 
-# 3) Inspect either format
-zonnx inspect ./models/model.onnx --pretty
-zonnx inspect ./models/model.zmf  --pretty
+# 3) Inspect either format (flags before input)
+zonnx inspect -pretty ./models/model.onnx
+zonnx inspect -pretty ./models/model.zmf
 ```
 
 ### Commands
@@ -116,14 +116,14 @@ Inspect either ONNX or ZMF. Type can be inferred from extension or set explicitl
 Syntax:
 
 ```bash
-zonnx inspect <input-file> [--type onnx|zmf] [--pretty]
+zonnx inspect [-type onnx|zmf] [-pretty] <input-file>
 ```
 
 Examples:
 
 ```bash
-zonnx inspect ./path/to/model.onnx
-zonnx inspect ./path/to/model.zmf --type zmf --pretty
+zonnx inspect -pretty ./path/to/model.onnx
+zonnx inspect -type zmf -pretty ./path/to/model.zmf
 ```
 
 Notes:
@@ -140,14 +140,20 @@ Convert ONNX → ZMF. This is the primary conversion command.
 Syntax:
 
 ```bash
-zonnx convert <input-file.onnx> [--output <output-file.zmf>]
+zonnx convert [-output <output-file.zmf>] <input-file.onnx>
 ```
 
 Example:
 
 ```bash
-zonnx convert ./models/encoder.onnx --output ./models/encoder.zmf
+zonnx convert -output ./models/encoder.zmf ./models/encoder.onnx
 ```
+
+Notes:
+- Flags must appear before the first positional argument when using Go's standard `flag` package.
+- The `convert` command accepts an alias `--output` in addition to `-output`.
+- If no output is specified, the default is `<input-dir>/<input-base>.zmf`.
+- Parent directories for the output path are created automatically.
 
 ## Why ZMF?
 
