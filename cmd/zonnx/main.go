@@ -3,11 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings" // Added for strings.ToLower
 
-	"github.com/zerfoo/zonnx/pkg/converter"
+	
 	"github.com/zerfoo/zonnx/pkg/importer"
 	// "github.com/zerfoo/zonnx/pkg/zmf_inspector" // Removed unused import
 	"google.golang.org/protobuf/proto"
@@ -19,10 +20,23 @@ import (
 )
 
 func main() {
+	logFile, err := os.OpenFile("zonnx-converter.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open log file: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if cerr := logFile.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "Error closing log file: %v\n", cerr)
+		}
+	}()
+	log.SetOutput(logFile)
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
 	}
+
 
 	switch os.Args[1] {
 	case "import":
@@ -175,10 +189,8 @@ func handleConvert() {
 		*outputFile = filepath.Base(inputFile[:len(inputFile)-len(filepath.Ext(inputFile))]) + ".zmf"
 	}
 
-	model, err := importer.LoadOnnxModel(inputFile)
-	handleErr(err)
-
-	zmfModel, err := converter.ONNXToZMFWithPath(model, inputFile)
+	// Use the refactored importer.ConvertOnnxToZmf directly
+	zmfModel, err := importer.ConvertOnnxToZmf(inputFile)
 	handleErr(err)
 
 	// Serialize the ZMF model to a file
