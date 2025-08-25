@@ -1,10 +1,7 @@
 package registry
 
 import (
-	"github.com/zerfoo/zerfoo/compute"
-	"github.com/zerfoo/zerfoo/graph"
-	"github.com/zerfoo/zerfoo/numeric"
-	"github.com/zerfoo/zerfoo/tensor"
+	"github.com/zerfoo/zmf"
 	"github.com/zerfoo/zonnx/internal/onnx"
 )
 
@@ -12,26 +9,27 @@ import (
 type ConversionContext struct {
 	Initializers map[string]*onnx.TensorProto
 	ValueInfo    map[string]*onnx.ValueInfoProto
+	QuantizationInfo map[string]*zmf.Quantization // Map from tensor name to its quantization parameters
 }
 
-// LayerConstructor defines a function that creates a zerfoo graph.Node from an ONNX NodeProto.
-type LayerConstructor[T tensor.Numeric] func(
-	engine compute.Engine[T],
-	ops numeric.Arithmetic[T],
-	node *onnx.NodeProto,
+// LayerConstructor is a function that constructs a zerfoo layer from an ONNX node.
+// It takes the ONNX node definition and a conversion context.
+type LayerConstructor func(
+	nodeDef *onnx.NodeProto,
 	ctx *ConversionContext,
-) (graph.Node[T], error)
+) (interface{}, error)
 
-// registry holds the mapping from ONNX op_types to our layer constructors.
-var registry = make(map[string]any)
+
+// constructors holds the mapping from ONNX op_types to our layer constructors.
+var constructors = make(map[string]LayerConstructor)
 
 // Register adds a new layer constructor to the registry.
-func Register[T tensor.Numeric](opType string, constructor LayerConstructor[T]) {
-	registry[opType] = constructor
+func Register(opType string, constructor LayerConstructor) {
+	constructors[opType] = constructor
 }
 
 // Get returns the constructor for a given op type.
-func Get(opType string) (any, bool) {
-	constructor, ok := registry[opType]
+func Get(opType string) (LayerConstructor, bool) {
+	constructor, ok := constructors[opType]
 	return constructor, ok
 }
