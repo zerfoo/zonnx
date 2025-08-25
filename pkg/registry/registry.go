@@ -7,8 +7,8 @@ import (
 
 // ConversionContext holds all the graph-level information needed during conversion.
 type ConversionContext struct {
-	Initializers map[string]*onnx.TensorProto
-	ValueInfo    map[string]*onnx.ValueInfoProto
+	Initializers     map[string]*onnx.TensorProto
+	ValueInfo        map[string]*onnx.ValueInfoProto
 	QuantizationInfo map[string]*zmf.Quantization // Map from tensor name to its quantization parameters
 }
 
@@ -18,7 +18,6 @@ type LayerConstructor func(
 	nodeDef *onnx.NodeProto,
 	ctx *ConversionContext,
 ) (interface{}, error)
-
 
 // constructors holds the mapping from ONNX op_types to our layer constructors.
 var constructors = make(map[string]LayerConstructor)
