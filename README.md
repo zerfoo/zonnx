@@ -4,10 +4,12 @@ This tool is a standalone command-line utility responsible for converting machin
 
 ## Features
 
-- **ONNX to ZMF Conversion**: Convert ONNX models to the Zerfoo Model Format, ensuring a clean and decoupled representation that is independent of the `zerfoo` runtime.
-- **ZMF to ONNX Export**: Export ZMF models back to ONNX format.
-- **Model Inspection**: Inspect details of ONNX and ZMF models.
-- **HuggingFace Model Download**: Download ONNX models and their associated tokenizer files directly from HuggingFace Hub.
+- **ONNX → ZMF conversion (fast, deterministic)**: Produce portable ZMF artifacts fully decoupled from the `zerfoo` runtime.
+- **Model inspection (ONNX and ZMF)**: Introspect model metadata, IOs, nodes and tensor stats. Output is JSON-friendly; `--pretty` planned.
+- **HuggingFace integration**: Download ONNX models and common tokenizer files in one step.
+- **CGO-free builds**: Ships as a single static binary. Easy to distribute and run in minimal containers.
+- **Clean separation of concerns**: Converter lives outside the training/runtime stack. No `github.com/zerfoo/zerfoo` imports in conversion code.
+- **ZMF → ONNX export (planned)**: Round-trip conversion is on the roadmap.
 
 ## Architectural Principles
 
@@ -24,15 +26,37 @@ This strict separation ensures modularity, independent development, and maintain
 
 ## Usage
 
-### Building the Tool
+### Installation
 
-To build the `zonnx` executable, navigate to the project root and run:
+Install the CLI directly:
+
+```bash
+go install github.com/zerfoo/zonnx/cmd/zonnx@latest
+```
+
+Or build from source at the repo root:
 
 ```bash
 go build -o zonnx ./cmd/zonnx
 ```
 
-This will create an executable named `zonnx` in your current directory.
+Notes:
+- Requires Go specified in `go.mod` (currently `go 1.25`).
+- CGO is not required; the module is tested to build with `CGO_ENABLED=0`.
+
+### Quickstart
+
+```bash
+# 1) Download an ONNX model and tokenizer files from HuggingFace
+zonnx download --model google/gemma-2-2b-it --output ./models
+
+# 2) Convert ONNX → ZMF
+zonnx convert ./models/model.onnx --output ./models/model.zmf
+
+# 3) Inspect either format
+zonnx inspect ./models/model.onnx --pretty
+zonnx inspect ./models/model.zmf  --pretty
+```
 
 ### Commands
 
@@ -75,24 +99,68 @@ When a model is downloaded, `zonnx` will automatically attempt to identify and d
 
 #### `import`
 
-(Existing documentation for import command)
+Import ONNX and emit ZMF. This is a future-friendly alias for `convert`.
+
+Status: planned; use `convert` today.
 
 #### `export`
 
-(Existing documentation for export command)
+Export ZMF back to ONNX.
+
+Status: planned; coming soon.
 
 #### `inspect`
 
-(Existing documentation for inspect command)
+Inspect either ONNX or ZMF. Type can be inferred from extension or set explicitly.
+
+Syntax:
+
+```bash
+zonnx inspect <input-file> [--type onnx|zmf] [--pretty]
+```
+
+Examples:
+
+```bash
+zonnx inspect ./path/to/model.onnx
+zonnx inspect ./path/to/model.zmf --type zmf --pretty
+```
+
+Notes:
+- `--pretty` human-friendly printing is planned; JSON schema output is the target.
 
 #### `inspect-zmf`
 
-(Existing documentation for inspect-zmf command)
+Deprecated. Use `inspect <file.zmf>` or `inspect --type zmf`.
 
 #### `convert`
 
-(Existing documentation for convert command)
+Convert ONNX → ZMF. This is the primary conversion command.
+
+Syntax:
+
+```bash
+zonnx convert <input-file.onnx> [--output <output-file.zmf>]
+```
+
+Example:
+
+```bash
+zonnx convert ./models/encoder.onnx --output ./models/encoder.zmf
+```
+
+## Why ZMF?
+
+Zerfoo Model Format (ZMF) is a compact, explicit representation designed for fast loading and deterministic execution by the Zerfoo runtime. Benefits:
+
+- Explicit shapes and attributes; no reliance on ONNX runtime semantics at load time.
+- Portable files, amenable to signing and caching.
+- Decouples model authoring/conversion from runtime execution.
 
 ## Development
 
-(Existing development section, if any)
+- Lint: `golangci-lint run`
+- Test: `go test ./...`
+- Format: `go fmt ./...`
+
+The codebase is intentionally free of `github.com/zerfoo/zerfoo` imports in conversion paths to preserve a strict boundary between conversion and runtime.
