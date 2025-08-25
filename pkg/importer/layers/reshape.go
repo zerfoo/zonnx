@@ -4,26 +4,19 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/zerfoo/zerfoo/compute"
-	"github.com/zerfoo/zerfoo/graph"
-	"github.com/zerfoo/zerfoo/layers/core"
-	"github.com/zerfoo/zerfoo/numeric"
-	"github.com/zerfoo/zerfoo/tensor"
 	"github.com/zerfoo/zonnx/internal/onnx"
 	"github.com/zerfoo/zonnx/pkg/registry"
 )
 
 func init() {
-	registry.Register("Reshape", BuildReshape[float32])
+	registry.Register("Reshape", BuildReshape)
 }
 
 // BuildReshape creates a new Reshape layer from an ONNX node.
-func BuildReshape[T tensor.Numeric](
-	engine compute.Engine[T],
-	_ numeric.Arithmetic[T],
+func BuildReshape(
 	node *onnx.NodeProto,
 	ctx *registry.ConversionContext,
-) (graph.Node[T], error) {
+) (interface{}, error) {
 	if len(node.GetInput()) != 2 {
 		return nil, fmt.Errorf("ONNX Reshape node %s must have 2 inputs (data, shape)", node.GetName())
 	}
@@ -45,16 +38,12 @@ func BuildReshape[T tensor.Numeric](
 	}
 
 	numElements := len(rawData) / 8
-	targetShape := make([]int, numElements)
+	targetShape := make([]int64, numElements) // Changed to int64 for ZMF compatibility
 	for i := 0; i < numElements; i++ {
 		val := binary.LittleEndian.Uint64(rawData[i*8 : (i+1)*8])
-		targetShape[i] = int(val)
+		targetShape[i] = int64(val)
 	}
 
-	// Note: The logic for resolving 0 and -1 in the shape is NOT needed here.
-	// That logic was for cleaning the zerfoo layer itself. The zonnx converter's
-	// primary job is to read the data as-is from the ONNX constant tensor.
-	// If resolution logic were needed, it would be applied here before creating the node.
-
-	return core.NewReshape[T](engine, targetShape), nil
+	// TODO: Return a ZMF representation of Reshape, including targetShape
+	return nil, nil
 }
