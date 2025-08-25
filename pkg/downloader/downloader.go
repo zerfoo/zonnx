@@ -11,8 +11,10 @@ import (
 )
 
 // Changed to var to allow overriding for testing
-var huggingFaceAPI = "https://huggingface.co/api/models/"
-var huggingFaceCDN = "https://huggingface.co/" // Base URL for direct file downloads
+var (
+	huggingFaceAPI = "https://huggingface.co/api/models/"
+	huggingFaceCDN = "https://huggingface.co/" // Base URL for direct file downloads
+)
 
 func init() {
 	if apiURL := os.Getenv("HUGGINGFACE_API_URL"); apiURL != "" {
@@ -59,7 +61,7 @@ func (d *Downloader) Download(modelID string, destination string) (*DownloadResu
 func downloadFile(url, filePath string, apiKey string) error { // Add apiKey parameter
 	// Create the directory if it doesn't exist
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
@@ -167,7 +169,6 @@ func (h *HuggingFaceSource) DownloadModel(modelID string, destination string) (r
 			err = fmt.Errorf("failed to close response body for %s: %w", apiURL, cerr)
 		}
 	}()
-
 
 	if resp.StatusCode != http.StatusOK {
 		err = fmt.Errorf("HuggingFace API returned non-OK status: %s", resp.Status)

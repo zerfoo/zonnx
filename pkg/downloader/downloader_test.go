@@ -111,7 +111,6 @@ func Test_downloadFile(t *testing.T) {
 		}
 	}()
 
-
 	tests := []struct {
 		name           string
 		serverHandler  http.HandlerFunc
@@ -133,7 +132,7 @@ func Test_downloadFile(t *testing.T) {
 		{
 			name: "HTTP error status",
 			serverHandler: func(w http.ResponseWriter, r *http.Request) {
-				http.Error(w, "Not Found", http.StatusNotFound);
+				http.Error(w, "Not Found", http.StatusNotFound)
 			},
 			fileName:       "error.txt",
 			expectedErrMsg: "status code 404",
@@ -176,7 +175,6 @@ func Test_downloadFile(t *testing.T) {
 			if tt.expectedErrMsg != "" {
 				if err == nil || !bytes.Contains([]byte(err.Error()), []byte(tt.expectedErrMsg)) {
 					t.Errorf("Expected error containing \"%s\", got \"%v\"", tt.expectedErrMsg, err)
-
 				}
 				// Ensure file was not created or is empty on error
 				_, fileErr := os.Stat(filePath)
@@ -192,13 +190,13 @@ func Test_downloadFile(t *testing.T) {
 					t.Fatalf("Failed to read downloaded file: %v", readErr)
 				}
 				// Adjust expected content for authenticated test case
-			expectedContent := "test content"
-			if tt.apiKey != "" && tt.expectedErrMsg == "" {
-				expectedContent = "authenticated content"
-			}
-			if string(content) != expectedContent {
-				t.Errorf("Downloaded content mismatch: got \"%s\", want \"%s\"", string(content), expectedContent)
-			}
+				expectedContent := "test content"
+				if tt.apiKey != "" && tt.expectedErrMsg == "" {
+					expectedContent = "authenticated content"
+				}
+				if string(content) != expectedContent {
+					t.Errorf("Downloaded content mismatch: got \"%s\", want \"%s\"", string(content), expectedContent)
+				}
 			}
 		})
 	}
@@ -264,7 +262,6 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 			t.Errorf("Error removing temp dir %s: %v", tempDir, cerr)
 		}
 	}()
-
 
 	tests := []struct {
 		name           string
@@ -440,7 +437,6 @@ func TestHuggingFaceSource_DownloadModel(t *testing.T) {
 				}))
 			}
 			defer cdnServer.Close()
-
 
 			// Temporarily override constants for testing
 			oldHuggingFaceAPI := huggingFaceAPI
