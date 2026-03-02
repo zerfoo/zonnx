@@ -478,6 +478,50 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 			}
 		}
 
+	case "Resize":
+		// ONNX Resize: inputs are [X, roi (opt), scales (opt), sizes (opt)].
+		// Promote scales (float32 tensor, input[2]) to a "scales" FLOATS attribute and
+		// sizes (INT64 tensor, input[3]) to a "sizes" INTS attribute so the zerfoo
+		// Resize layer can read them at build time.
+		resizeInputs := onnxNode.GetInput()
+		if len(resizeInputs) > 1 && resizeInputs[1] != "" {
+			// roi input - mark as processed (not needed for inference)
+			processedInputs[resizeInputs[1]] = true
+		}
+		if len(resizeInputs) > 2 && resizeInputs[2] != "" {
+			scaleName := resizeInputs[2]
+			if init, ok := initializers[scaleName]; ok {
+				if onnx.TensorProto_DataType(init.GetDataType()) == onnx.TensorProto_FLOAT {
+					var floats []float32
+					if rawData := init.GetRawData(); len(rawData) > 0 && len(rawData)%4 == 0 {
+						floats = make([]float32, len(rawData)/4)
+						for i := range floats {
+							floats[i] = math.Float32frombits(binary.LittleEndian.Uint32(rawData[i*4:]))
+						}
+					} else {
+						floats = init.GetFloatData()
+					}
+					if len(floats) > 0 {
+						zmfNode.Attributes["scales"] = &zmf.Attribute{
+							Value: &zmf.Attribute_Floats{Floats: &zmf.Floats{Val: floats}},
+						}
+					}
+				}
+				processedInputs[scaleName] = true
+			}
+		}
+		if len(resizeInputs) > 3 && resizeInputs[3] != "" {
+			sizeName := resizeInputs[3]
+			if init, ok := initializers[sizeName]; ok {
+				if ints, err := getInt64Data(init); err == nil {
+					zmfNode.Attributes["sizes"] = &zmf.Attribute{
+						Value: &zmf.Attribute_Ints{Ints: &zmf.Ints{Val: ints}},
+					}
+				}
+				processedInputs[sizeName] = true
+			}
+		}
+
 	case "Reshape":
 		// The second input to Reshape is the 'shape' tensor.
 		if len(onnxNode.GetInput()) > 1 {
@@ -516,6 +560,9 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 
 	// Process all inputs.
 	for _, inputName := range onnxNode.GetInput() {
+		if inputName == "" {
+			continue // Empty string means optional input not provided in ONNX.
+		}
 		if processedInputs[inputName] {
 			continue // Skip inputs that were handled as special cases.
 		}

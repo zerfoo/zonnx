@@ -732,3 +732,120 @@ func intAttr(name string, val int64) *onnx.AttributeProto {
 		I:    &val,
 	}
 }
+
+// float32Initializer builds a FLOAT32 1-D TensorProto from a []float32 slice.
+func float32Initializer(name string, vals []float32) *onnx.TensorProto {
+	rawData := make([]byte, len(vals)*4)
+	for i, v := range vals {
+		binary.LittleEndian.PutUint32(rawData[i*4:], math.Float32bits(v))
+	}
+	n := name
+	return &onnx.TensorProto{
+		Name:     &n,
+		DataType: protoInt32(int32(onnx.TensorProto_FLOAT)),
+		Dims:     []int64{int64(len(vals))},
+		RawData:  rawData,
+	}
+}
+
+func TestONNXToZMF_Resize_PromotesScalesToAttribute(t *testing.T) {
+	opType := "Resize"
+	nodeName := "resize_1"
+	model := &onnx.ModelProto{
+		Graph: &onnx.GraphProto{
+			Initializer: []*onnx.TensorProto{
+				float32Initializer("scales", []float32{1, 1, 2, 2}),
+			},
+			Node: []*onnx.NodeProto{
+				{
+					Name:   &nodeName,
+					OpType: &opType,
+					// inputs: [X, roi(empty), scales]
+					Input:  []string{"x", "", "scales"},
+					Output: []string{"resized"},
+					Attribute: []*onnx.AttributeProto{
+						{
+							Name:  strPtr("mode"),
+							Type:  attrTypePtr(onnx.AttributeProto_STRING),
+							S:     []byte("nearest"),
+						},
+					},
+				},
+			},
+			Input:  []*onnx.ValueInfoProto{valueInfo("x", onnx.TensorProto_FLOAT, []int64{1, 1, 2, 2})},
+			Output: []*onnx.ValueInfoProto{valueInfo("resized", onnx.TensorProto_FLOAT, []int64{1, 1, 4, 4})},
+		},
+	}
+	zmfModel, err := ONNXToZMF(model)
+	if err != nil {
+		t.Fatalf("ONNXToZMF failed: %v", err)
+	}
+	if len(zmfModel.Graph.Nodes) != 1 {
+		t.Fatalf("expected 1 node, got %d", len(zmfModel.Graph.Nodes))
+	}
+	node := zmfModel.Graph.Nodes[0]
+	if node.OpType != "Resize" {
+		t.Errorf("expected Resize, got %s", node.OpType)
+	}
+	scalesAttr, ok := node.Attributes["scales"]
+	if !ok {
+		t.Fatal("expected 'scales' attribute promoted from Resize input")
+	}
+	v, ok2 := scalesAttr.Value.(*zmf.Attribute_Floats)
+	if !ok2 {
+		t.Fatalf("expected Floats, got %T", scalesAttr.Value)
+	}
+	if len(v.Floats.Val) != 4 {
+		t.Errorf("expected 4 scale values, got %d", len(v.Floats.Val))
+	}
+	// X must remain as sole graph input.
+	if len(node.Inputs) != 1 || node.Inputs[0] != "x" {
+		t.Errorf("expected inputs=[x], got %v", node.Inputs)
+	}
+}
+
+func TestONNXToZMF_Resize_PromotesSizesToAttribute(t *testing.T) {
+	opType := "Resize"
+	nodeName := "resize_2"
+	model := &onnx.ModelProto{
+		Graph: &onnx.GraphProto{
+			Initializer: []*onnx.TensorProto{
+				int64Initializer("out_sizes", []int64{1, 1, 4, 4}),
+			},
+			Node: []*onnx.NodeProto{
+				{
+					Name:   &nodeName,
+					OpType: &opType,
+					// inputs: [X, roi(empty), scales(empty), sizes]
+					Input:  []string{"x", "", "", "out_sizes"},
+					Output: []string{"resized"},
+				},
+			},
+			Input:  []*onnx.ValueInfoProto{valueInfo("x", onnx.TensorProto_FLOAT, []int64{1, 1, 2, 2})},
+			Output: []*onnx.ValueInfoProto{valueInfo("resized", onnx.TensorProto_FLOAT, []int64{1, 1, 4, 4})},
+		},
+	}
+	zmfModel, err := ONNXToZMF(model)
+	if err != nil {
+		t.Fatalf("ONNXToZMF failed: %v", err)
+	}
+	node := zmfModel.Graph.Nodes[0]
+	sizesAttr, ok := node.Attributes["sizes"]
+	if !ok {
+		t.Fatal("expected 'sizes' attribute promoted from Resize input")
+	}
+	v, ok2 := sizesAttr.Value.(*zmf.Attribute_Ints)
+	if !ok2 {
+		t.Fatalf("expected Ints, got %T", sizesAttr.Value)
+	}
+	if len(v.Ints.Val) != 4 {
+		t.Errorf("expected 4 size values, got %d", len(v.Ints.Val))
+	}
+	if len(node.Inputs) != 1 || node.Inputs[0] != "x" {
+		t.Errorf("expected inputs=[x], got %v", node.Inputs)
+	}
+}
+
+func strPtr(s string) *string { return &s }
+
+func attrTypePtr(t onnx.AttributeProto_AttributeType) *onnx.AttributeProto_AttributeType { return &t }
