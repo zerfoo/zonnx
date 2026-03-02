@@ -404,6 +404,80 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 				}
 			}
 		}
+	case "Slice":
+		// ONNX Slice (opset 10+): inputs are [data, starts, ends, axes (opt), steps (opt)].
+		// Promote starts/ends/axes/steps from initializer tensors to named ZMF attributes
+		// so downstream zerfoo Slice layer receives them as attribute values.
+		sliceAttrNames := []string{"starts", "ends", "axes", "steps"}
+		sliceInputs := onnxNode.GetInput()
+		for i, attrName := range sliceAttrNames {
+			idx := i + 1 // input[0] is data; starts=1, ends=2, axes=3, steps=4
+			if idx >= len(sliceInputs) || sliceInputs[idx] == "" {
+				continue
+			}
+			inputName := sliceInputs[idx]
+			if init, ok := initializers[inputName]; ok {
+				ints, err := getInt64Data(init)
+				if err == nil {
+					zmfNode.Attributes[attrName] = &zmf.Attribute{
+						Value: &zmf.Attribute_Ints{Ints: &zmf.Ints{Val: ints}},
+					}
+					processedInputs[inputName] = true
+				}
+			}
+		}
+
+	case "Pad":
+		// ONNX Pad (opset 11+): inputs are [data, pads, constant_value (opt)].
+		// Promote pads (INT64 tensor) and constant_value (float32 scalar) to ZMF attributes.
+		padInputs := onnxNode.GetInput()
+		if len(padInputs) > 1 && padInputs[1] != "" {
+			if init, ok := initializers[padInputs[1]]; ok {
+				if ints, err := getInt64Data(init); err == nil {
+					zmfNode.Attributes["pads"] = &zmf.Attribute{
+						Value: &zmf.Attribute_Ints{Ints: &zmf.Ints{Val: ints}},
+					}
+					processedInputs[padInputs[1]] = true
+				}
+			}
+		}
+		if len(padInputs) > 2 && padInputs[2] != "" {
+			if init, ok := initializers[padInputs[2]]; ok {
+				if onnx.TensorProto_DataType(init.GetDataType()) == onnx.TensorProto_FLOAT {
+					var f float32
+					var ok2 bool
+					if rawData := init.GetRawData(); len(rawData) == 4 {
+						f = math.Float32frombits(binary.LittleEndian.Uint32(rawData))
+						ok2 = true
+					} else if fd := init.GetFloatData(); len(fd) == 1 {
+						f = fd[0]
+						ok2 = true
+					}
+					if ok2 {
+						zmfNode.Attributes["constant_value"] = &zmf.Attribute{
+							Value: &zmf.Attribute_F{F: f},
+						}
+						processedInputs[padInputs[2]] = true
+					}
+				}
+			}
+		}
+
+	case "TopK":
+		// ONNX TopK: inputs are [X, K] where K is a scalar INT64 initializer tensor.
+		// Promote K to a ZMF "k" attribute so the zerfoo TopK layer receives it.
+		topkInputs := onnxNode.GetInput()
+		if len(topkInputs) > 1 && topkInputs[1] != "" {
+			if init, ok := initializers[topkInputs[1]]; ok {
+				if ints, err := getInt64Data(init); err == nil && len(ints) == 1 {
+					zmfNode.Attributes["k"] = &zmf.Attribute{
+						Value: &zmf.Attribute_I{I: ints[0]},
+					}
+					processedInputs[topkInputs[1]] = true
+				}
+			}
+		}
+
 	case "Reshape":
 		// The second input to Reshape is the 'shape' tensor.
 		if len(onnxNode.GetInput()) > 1 {
