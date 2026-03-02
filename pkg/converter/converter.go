@@ -3,6 +3,7 @@ package converter
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -79,26 +80,234 @@ func ONNXToZMFWithPath(model *onnx.ModelProto, modelPath string) (*zmf.Model, er
 	}
 
 	for _, onnxNode := range onnxGraph.GetNode() {
-		zmfNode, err := convertNode(onnxNode, initializers, valueInfos)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert node '%s': %w", onnxNode.GetName(), err)
+		switch onnxNode.GetOpType() {
+		case "Constant":
+			// Constant nodes embed their value as a tensor attribute.
+			// Store the value as a ZMF parameter keyed by each output name and skip
+			// adding a node to the graph so downstream nodes see it as a regular input.
+			zmfTensor, err := extractConstantTensor(onnxNode, modelPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to extract Constant node '%s': %w", onnxNode.GetName(), err)
+			}
+			for _, outName := range onnxNode.GetOutput() {
+				if outName != "" {
+					zmfModel.Graph.Parameters[outName] = zmfTensor
+				}
+			}
+			// Also register under the node name itself.
+			if onnxNode.GetName() != "" {
+				zmfModel.Graph.Parameters[onnxNode.GetName()] = zmfTensor
+			}
+
+		case "MatMulNBits":
+			// Dequantize 4-bit quantized weights to float32 at import time and emit a
+			// standard MatMul node.  This avoids needing a specialised runtime kernel.
+			zmfNode, err := convertMatMulNBits(onnxNode, initializers, zmfModel.Graph.Parameters, modelPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert MatMulNBits node '%s': %w", onnxNode.GetName(), err)
+			}
+			zmfModel.Graph.Nodes = append(zmfModel.Graph.Nodes, zmfNode)
+
+		default:
+			zmfNode, err := convertNode(onnxNode, initializers, valueInfos)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert node '%s': %w", onnxNode.GetName(), err)
+			}
+			zmfModel.Graph.Nodes = append(zmfModel.Graph.Nodes, zmfNode)
 		}
-		zmfModel.Graph.Nodes = append(zmfModel.Graph.Nodes, zmfNode)
 	}
 
 	for name, onnxTensor := range initializers {
 		dtype := onnx.TensorProto_DataType(onnxTensor.GetDataType())
 		switch dtype {
-		case onnx.TensorProto_FLOAT, onnx.TensorProto_FLOAT16, onnx.TensorProto_BFLOAT16, onnx.TensorProto_DOUBLE:
+		case onnx.TensorProto_FLOAT, onnx.TensorProto_FLOAT16, onnx.TensorProto_BFLOAT16, onnx.TensorProto_DOUBLE,
+			onnx.TensorProto_UINT8, onnx.TensorProto_INT8, onnx.TensorProto_INT32, onnx.TensorProto_INT64:
 			zmfTensor, err := convertTensorWithPath(onnxTensor, modelPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert float initializer '%s': %w", name, err)
+				return nil, fmt.Errorf("failed to convert initializer '%s': %w", name, err)
 			}
 			zmfModel.Graph.Parameters[name] = zmfTensor
 		}
 	}
 
 	return zmfModel, nil
+}
+
+// extractConstantTensor extracts the tensor value from an ONNX Constant op node.
+func extractConstantTensor(node *onnx.NodeProto, modelPath string) (*zmf.Tensor, error) {
+	for _, attr := range node.GetAttribute() {
+		if attr.GetName() == "value" && attr.GetType() == onnx.AttributeProto_TENSOR {
+			return convertTensorWithPath(attr.GetT(), modelPath)
+		}
+	}
+	return nil, fmt.Errorf("constant node '%s' has no 'value' TENSOR attribute", node.GetName())
+}
+
+// convertMatMulNBits dequantizes a MatMulNBits node's weights to float32 and returns a
+// regular MatMul ZMF node whose weight input is the dequantized parameter.
+//
+// ONNX MatMulNBits computes:  Y = A @ dequantize(B).T
+//   - A: float [batch, M, K]
+//   - B: uint8 [N, ceil(K/block_size), block_size*bits/8]
+//   - scales: float32 [N * ceil(K/block_size)]  (one scale per block)
+//   - zero_points (optional): uint8, 4-bit packed
+//
+// We dequantize B to a float32 [K, N] matrix so that a standard
+// MatMul(A, B_dequant) produces the correct [batch, M, N] output.
+func convertMatMulNBits(
+	node *onnx.NodeProto,
+	initializers map[string]*onnx.TensorProto,
+	params map[string]*zmf.Tensor,
+	_ string, // modelPath reserved for future external-data support
+) (*zmf.Node, error) {
+	// Read operator attributes.
+	var K, N, bits, blockSize int
+	for _, attr := range node.GetAttribute() {
+		switch attr.GetName() {
+		case "K":
+			K = int(attr.GetI())
+		case "N":
+			N = int(attr.GetI())
+		case "bits":
+			bits = int(attr.GetI())
+		case "block_size":
+			blockSize = int(attr.GetI())
+		}
+	}
+	if K == 0 || N == 0 || bits == 0 || blockSize == 0 {
+		return nil, fmt.Errorf("MatMulNBits node '%s' missing required attributes (K=%d N=%d bits=%d block_size=%d)",
+			node.GetName(), K, N, bits, blockSize)
+	}
+
+	inputs := node.GetInput()
+	if len(inputs) < 3 {
+		return nil, fmt.Errorf("MatMulNBits node '%s' requires at least 3 inputs, got %d", node.GetName(), len(inputs))
+	}
+	activationName := inputs[0]
+	weightName := inputs[1]
+	scaleName := inputs[2]
+
+	weightTensor, ok := initializers[weightName]
+	if !ok {
+		return nil, fmt.Errorf("MatMulNBits weight initializer '%s' not found", weightName)
+	}
+	scaleTensor, ok := initializers[scaleName]
+	if !ok {
+		return nil, fmt.Errorf("MatMulNBits scale initializer '%s' not found", scaleName)
+	}
+
+	var zpTensor *onnx.TensorProto
+	if len(inputs) >= 4 && inputs[3] != "" {
+		zpTensor = initializers[inputs[3]]
+	}
+
+	dequantTensor, err := dequantizeNBits(weightTensor, scaleTensor, zpTensor, N, K, bits, blockSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dequantize MatMulNBits '%s': %w", node.GetName(), err)
+	}
+
+	dequantName := weightName + "_dequant"
+	params[dequantName] = dequantTensor
+
+	// Build a standard MatMul ZMF node.
+	zmfNode := &zmf.Node{
+		Name:       node.GetName(),
+		OpType:     "MatMul",
+		Outputs:    node.GetOutput(),
+		Inputs:     []string{activationName, dequantName},
+		Attributes: make(map[string]*zmf.Attribute),
+	}
+	return zmfNode, nil
+}
+
+// dequantizeNBits dequantizes packed N-bit quantized weights to float32 [K, N].
+// The result is stored transposed ([K, N]) so it can be used directly in A @ B.
+func dequantizeNBits(
+	weightTensor *onnx.TensorProto,
+	scaleTensor *onnx.TensorProto,
+	zpTensor *onnx.TensorProto,
+	N, K, bits, blockSize int,
+) (*zmf.Tensor, error) {
+	if bits != 4 {
+		return nil, fmt.Errorf("only 4-bit quantization is currently supported, got %d bits", bits)
+	}
+
+	kBlocks := (K + blockSize - 1) / blockSize
+	bytesPerBlock := blockSize * bits / 8 // = blockSize/2 for 4-bit
+
+	weightData := weightTensor.GetRawData()
+	if len(weightData) != N*kBlocks*bytesPerBlock {
+		return nil, fmt.Errorf("weight data length mismatch: expected %d, got %d",
+			N*kBlocks*bytesPerBlock, len(weightData))
+	}
+
+	scaleData := scaleTensor.GetRawData()
+	if len(scaleData) != N*kBlocks*4 {
+		// scales may also be stored as FloatData
+		if len(scaleTensor.GetFloatData()) == N*kBlocks {
+			scaleData = make([]byte, N*kBlocks*4)
+			for i, v := range scaleTensor.GetFloatData() {
+				binary.LittleEndian.PutUint32(scaleData[i*4:], math.Float32bits(v))
+			}
+		} else {
+			return nil, fmt.Errorf("scale data length mismatch: expected %d bytes, got %d",
+				N*kBlocks*4, len(scaleData))
+		}
+	}
+
+	// Dequantize: output [N, K] then transpose to [K, N].
+	dequant := make([]float32, N*K)
+	for n := 0; n < N; n++ {
+		for kblk := 0; kblk < kBlocks; kblk++ {
+			scaleOffset := (n*kBlocks + kblk) * 4
+			scale := math.Float32frombits(binary.LittleEndian.Uint32(scaleData[scaleOffset : scaleOffset+4]))
+
+			// Default zero point for symmetric 4-bit is 8.
+			var zp float32 = 8.0
+			if zpTensor != nil {
+				zpData := zpTensor.GetRawData()
+				zpIdx := n*kBlocks + kblk
+				if len(zpData) > zpIdx/2 {
+					if zpIdx%2 == 0 {
+						zp = float32(zpData[zpIdx/2] & 0xF)
+					} else {
+						zp = float32((zpData[zpIdx/2] >> 4) & 0xF)
+					}
+				}
+			}
+
+			for byteIdx := 0; byteIdx < bytesPerBlock; byteIdx++ {
+				wByte := weightData[n*kBlocks*bytesPerBlock+kblk*bytesPerBlock+byteIdx]
+				kLo := kblk*blockSize + byteIdx*2
+				kHi := kLo + 1
+				if kLo < K {
+					dequant[n*K+kLo] = scale * (float32(wByte&0xF) - zp)
+				}
+				if kHi < K {
+					dequant[n*K+kHi] = scale * (float32((wByte>>4)&0xF) - zp)
+				}
+			}
+		}
+	}
+
+	// Transpose from [N, K] to [K, N] so MatMul(A[..., K], W[K, N]) = [..., N].
+	transposed := make([]float32, K*N)
+	for n := 0; n < N; n++ {
+		for k := 0; k < K; k++ {
+			transposed[k*N+n] = dequant[n*K+k]
+		}
+	}
+
+	rawData := make([]byte, K*N*4)
+	for i, v := range transposed {
+		binary.LittleEndian.PutUint32(rawData[i*4:], math.Float32bits(v))
+	}
+
+	return &zmf.Tensor{
+		Dtype: zmf.Tensor_FLOAT32,
+		Shape: []int64{int64(K), int64(N)},
+		Data:  rawData,
+	}, nil
 }
 
 // convertNode converts an ONNX node to a ZMF node, promoting constant integer
@@ -282,6 +491,14 @@ func convertAttribute(onnxAttr *onnx.AttributeProto) (*zmf.Attribute, error) {
 			strings[i] = string(s)
 		}
 		zmfAttr.Value = &zmf.Attribute_Strings{Strings: &zmf.Strings{Val: strings}}
+	case onnx.AttributeProto_TENSOR:
+		// Convert the embedded ONNX tensor to ZMF format.
+		// Constant node attributes use this to carry their value tensor.
+		zmfTensor, err := convertTensorWithPath(onnxAttr.GetT(), "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert TENSOR attribute: %w", err)
+		}
+		zmfAttr.Value = &zmf.Attribute_Tensor{Tensor: zmfTensor}
 	default:
 		return nil, fmt.Errorf("unsupported attribute type: %v", onnxAttr.GetType())
 	}
@@ -325,6 +542,10 @@ func convertTensorWithPath(onnxTensor *onnx.TensorProto, modelPath string) (*zmf
 		zmfTensor.Dtype = zmf.Tensor_INT64
 	case onnx.TensorProto_DOUBLE:
 		zmfTensor.Dtype = zmf.Tensor_FLOAT64
+	case onnx.TensorProto_UINT8:
+		zmfTensor.Dtype = zmf.Tensor_UINT8
+	case onnx.TensorProto_INT8:
+		zmfTensor.Dtype = zmf.Tensor_INT8
 	default:
 		return nil, fmt.Errorf("unsupported tensor data type: %s", onnx.TensorProto_DataType_name[onnxTensor.GetDataType()])
 	}
