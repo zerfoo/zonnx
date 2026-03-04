@@ -667,6 +667,8 @@ func convertTensorWithPath(onnxTensor *onnx.TensorProto, modelPath string) (*zmf
 		zmfTensor.Dtype = zmf.Tensor_UINT8
 	case onnx.TensorProto_INT8:
 		zmfTensor.Dtype = zmf.Tensor_INT8
+	case onnx.TensorProto_BOOL:
+		zmfTensor.Dtype = zmf.Tensor_BOOL
 	default:
 		return nil, fmt.Errorf("unsupported tensor data type: %s", onnx.TensorProto_DataType_name[onnxTensor.GetDataType()])
 	}
