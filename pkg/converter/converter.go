@@ -567,26 +567,10 @@ func convertNode(onnxNode *onnx.NodeProto, initializers map[string]*onnx.TensorP
 			continue // Skip inputs that were handled as special cases.
 		}
 
-		// Check if the input is a constant integer initializer that should be promoted.
-		if initializer, ok := initializers[inputName]; ok {
-			dtype := onnx.TensorProto_DataType(initializer.GetDataType())
-			if dtype == onnx.TensorProto_INT64 || dtype == onnx.TensorProto_INT32 {
-				// Promote to a generic attribute, using the initializer's name as the key.
-				ints, err := getInt64Data(initializer)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get data for constant '%s': %w", inputName, err)
-				}
-				zmfNode.Attributes[inputName] = &zmf.Attribute{
-					Value: &zmf.Attribute_Ints{Ints: &zmf.Ints{Val: ints}},
-				}
-			} else {
-				// It's a non-integer initializer (e.g., float weights), treat as a regular graph input.
-				zmfNode.Inputs = append(zmfNode.Inputs, inputName)
-			}
-		} else {
-			// Not an initializer, so it's a regular input from another node.
-			zmfNode.Inputs = append(zmfNode.Inputs, inputName)
-		}
+		// Keep the input as a regular graph reference. The initializer (if
+		// any) is already converted to a ZMF parameter and will be resolved
+		// as a parameterNode during graph construction.
+		zmfNode.Inputs = append(zmfNode.Inputs, inputName)
 	}
 
 	return zmfNode, nil
