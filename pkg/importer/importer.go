@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/zerfoo/zmf"
 	"github.com/zerfoo/zonnx/internal/onnx"
@@ -89,7 +91,11 @@ func ConvertOnnxToZmf(
 
 	// Populate parameters from initializers
 	for _, init := range onnxModel.GetGraph().GetInitializer() {
-		zmfGraph.Parameters[init.GetName()] = onnxTensorToZmfTensor(init, ctx)
+		t, err := onnxTensorToZmfTensor(init, ctx, path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert tensor %q: %w", init.GetName(), err)
+		}
+		zmfGraph.Parameters[init.GetName()] = t
 	}
 
 	// Populate nodes
@@ -152,13 +158,26 @@ func ConvertOnnxToZmf(
 	return zmfModel, nil
 }
 
-// Helper function to convert ONNX TensorProto to ZMF Tensor
-func onnxTensorToZmfTensor(ot *onnx.TensorProto, ctx *registry.ConversionContext) *zmf.Tensor {
+// onnxTensorToZmfTensor converts an ONNX TensorProto to a ZMF Tensor,
+// loading external data from disk when the tensor uses ONNX external storage.
+func onnxTensorToZmfTensor(ot *onnx.TensorProto, ctx *registry.ConversionContext, modelPath string) (*zmf.Tensor, error) {
 	zmfDtype := onnxDataTypeToZmfDataType(onnx.TensorProto_DataType(ot.GetDataType()))
+
+	var data []byte
+	if len(ot.GetExternalData()) > 0 {
+		var err error
+		data, err = loadExternalData(ot, modelPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load external data for %q: %w", ot.GetName(), err)
+		}
+	} else {
+		data = ot.GetRawData()
+	}
+
 	zmfTensor := &zmf.Tensor{
 		Dtype: zmfDtype,
 		Shape: ot.GetDims(),
-		Data:  ot.GetRawData(),
+		Data:  data,
 	}
 
 	// Check for quantization info
@@ -166,7 +185,80 @@ func onnxTensorToZmfTensor(ot *onnx.TensorProto, ctx *registry.ConversionContext
 		zmfTensor.Quant = quantInfo
 	}
 
-	return zmfTensor
+	return zmfTensor, nil
+}
+
+// loadExternalData reads tensor data from an external file referenced by the ONNX tensor.
+func loadExternalData(tensor *onnx.TensorProto, modelPath string) ([]byte, error) {
+	var location string
+	var offset, length int64
+
+	for _, entry := range tensor.GetExternalData() {
+		switch entry.GetKey() {
+		case "location":
+			location = entry.GetValue()
+		case "offset":
+			if v := entry.GetValue(); v != "" {
+				n, err := strconv.ParseInt(v, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid offset %q: %w", v, err)
+				}
+				offset = n
+			}
+		case "length":
+			if v := entry.GetValue(); v != "" {
+				n, err := strconv.ParseInt(v, 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("invalid length %q: %w", v, err)
+				}
+				length = n
+			}
+		}
+	}
+
+	if location == "" {
+		return nil, fmt.Errorf("external data location not specified")
+	}
+
+	var extPath string
+	if filepath.IsAbs(location) {
+		extPath = location
+	} else {
+		extPath = filepath.Join(filepath.Dir(modelPath), location)
+	}
+
+	f, err := os.Open(extPath)
+	if err != nil {
+		return nil, fmt.Errorf("open external data %s: %w", extPath, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if offset > 0 {
+		if _, err := f.Seek(offset, 0); err != nil {
+			return nil, fmt.Errorf("seek to offset %d: %w", offset, err)
+		}
+	}
+
+	if length > 0 {
+		data := make([]byte, length)
+		if _, err := f.Read(data); err != nil {
+			return nil, fmt.Errorf("read %d bytes: %w", length, err)
+		}
+		return data, nil
+	}
+
+	// No length specified — read all remaining from offset.
+	data, err := os.ReadFile(extPath)
+	if err != nil {
+		return nil, fmt.Errorf("read external file: %w", err)
+	}
+	if offset > 0 {
+		if int64(len(data)) <= offset {
+			return nil, fmt.Errorf("offset %d exceeds file size %d", offset, len(data))
+		}
+		data = data[offset:]
+	}
+	return data, nil
 }
 
 // Helper function to convert ONNX ValueInfoProto to ZMF ValueInfo
@@ -246,7 +338,15 @@ func onnxAttributeToZmfAttribute(oa *onnx.AttributeProto) (*zmf.Attribute, error
 			strVals[i] = string(s)
 		}
 		zmfAttr.Value = &zmf.Attribute_Strings{Strings: &zmf.Strings{Val: strVals}}
-	case onnx.AttributeProto_TENSOR, onnx.AttributeProto_GRAPH, onnx.AttributeProto_SPARSE_TENSOR, onnx.AttributeProto_TYPE_PROTO,
+	case onnx.AttributeProto_TENSOR:
+		tensorProto := oa.GetT()
+		zmfTensor := &zmf.Tensor{
+			Dtype: onnxDataTypeToZmfDataType(onnx.TensorProto_DataType(tensorProto.GetDataType())),
+			Shape: tensorProto.GetDims(),
+			Data:  tensorProto.GetRawData(),
+		}
+		zmfAttr.Value = &zmf.Attribute_Tensor{Tensor: zmfTensor}
+	case onnx.AttributeProto_GRAPH, onnx.AttributeProto_SPARSE_TENSOR, onnx.AttributeProto_TYPE_PROTO,
 		onnx.AttributeProto_TENSORS, onnx.AttributeProto_GRAPHS, onnx.AttributeProto_SPARSE_TENSORS, onnx.AttributeProto_TYPE_PROTOS:
 		return nil, fmt.Errorf("unsupported ONNX attribute type for ZMF: %s", oa.GetType().String())
 	default:
