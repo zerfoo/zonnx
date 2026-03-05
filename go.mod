@@ -6,3 +6,5 @@ require (
 	github.com/zerfoo/zmf v0.3.0
 	google.golang.org/protobuf v1.36.8
 )
+
+replace github.com/zerfoo/zmf => ../zmf
