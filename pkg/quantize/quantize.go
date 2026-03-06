@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/zerfoo/zmf"
 )
@@ -43,6 +44,9 @@ func Model(m *zmf.Model, qt QuantType) error {
 		if t.Dtype != zmf.Tensor_FLOAT32 {
 			continue
 		}
+		if skipQuantize(name, t) {
+			continue
+		}
 
 		f32 := decodeFloat32(t.Data)
 		data, dtype := encode(f32)
@@ -54,6 +58,37 @@ func Model(m *zmf.Model, qt QuantType) error {
 	}
 
 	return nil
+}
+
+// minQuantElements is the minimum number of elements for a tensor to be quantized.
+// Tensors with fewer elements (e.g., norm weights, bias vectors) lose too much
+// precision from block quantization and are kept as float32.
+const minQuantElements = 1024
+
+// skipQuantize returns true for tensors that should NOT be quantized.
+// Norm weights, bias vectors, and small tensors are kept in float32.
+func skipQuantize(name string, t *zmf.Tensor) bool {
+	lower := strings.ToLower(name)
+
+	// Skip normalization weights (RMSNorm, LayerNorm).
+	if strings.Contains(lower, "norm") {
+		return true
+	}
+	// Skip bias tensors.
+	if strings.HasSuffix(lower, ".bias") || strings.HasSuffix(lower, "_bias") {
+		return true
+	}
+	// Skip embedding tables (used in Gather, dequantization happens per-lookup).
+	if strings.Contains(lower, "embed") {
+		return true
+	}
+
+	// Skip small tensors.
+	numElements := 1
+	for _, d := range t.Shape {
+		numElements *= int(d)
+	}
+	return numElements < minQuantElements
 }
 
 func decodeFloat32(b []byte) []float32 {

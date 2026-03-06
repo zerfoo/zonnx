@@ -17,17 +17,18 @@ func makeFloat32Bytes(vals []float32) []byte {
 }
 
 func TestQuantizeModel_Q4_0(t *testing.T) {
-	vals := make([]float32, 32)
+	n := 1024
+	vals := make([]float32, n)
 	for i := range vals {
-		vals[i] = float32(i) / 31.0
+		vals[i] = float32(i) / float32(n)
 	}
 
 	model := &zmf.Model{
 		Graph: &zmf.Graph{
 			Parameters: map[string]*zmf.Tensor{
-				"weight": {
+				"model.layers.0.self_attn.q_proj.weight": {
 					Dtype: zmf.Tensor_FLOAT32,
-					Shape: []int64{32},
+					Shape: []int64{int64(n)},
 					Data:  makeFloat32Bytes(vals),
 				},
 				"bias_int64": {
@@ -44,14 +45,13 @@ func TestQuantizeModel_Q4_0(t *testing.T) {
 		t.Fatalf("QuantizeModel failed: %v", err)
 	}
 
-	// Weight should now be Q4_0.
-	w := model.Graph.Parameters["weight"]
+	w := model.Graph.Parameters["model.layers.0.self_attn.q_proj.weight"]
 	if w.Dtype != zmf.Tensor_Q4_0 {
 		t.Errorf("weight dtype = %v, want Q4_0", w.Dtype)
 	}
-	// 1 block of 18 bytes.
-	if len(w.Data) != 18 {
-		t.Errorf("weight data len = %d, want 18", len(w.Data))
+	// 1024/32 = 32 blocks, 32 * 18 = 576 bytes.
+	if len(w.Data) != 576 {
+		t.Errorf("weight data len = %d, want 576", len(w.Data))
 	}
 
 	// Non-float32 tensor should be unchanged.
@@ -62,17 +62,18 @@ func TestQuantizeModel_Q4_0(t *testing.T) {
 }
 
 func TestQuantizeModel_Q8_0(t *testing.T) {
-	vals := make([]float32, 64)
+	n := 1024
+	vals := make([]float32, n)
 	for i := range vals {
-		vals[i] = float32(i-32) / 32.0
+		vals[i] = float32(i-n/2) / float32(n)
 	}
 
 	model := &zmf.Model{
 		Graph: &zmf.Graph{
 			Parameters: map[string]*zmf.Tensor{
-				"weight": {
+				"model.layers.0.mlp.gate_proj.weight": {
 					Dtype: zmf.Tensor_FLOAT32,
-					Shape: []int64{64},
+					Shape: []int64{int64(n)},
 					Data:  makeFloat32Bytes(vals),
 				},
 			},
@@ -84,13 +85,74 @@ func TestQuantizeModel_Q8_0(t *testing.T) {
 		t.Fatalf("QuantizeModel failed: %v", err)
 	}
 
-	w := model.Graph.Parameters["weight"]
+	w := model.Graph.Parameters["model.layers.0.mlp.gate_proj.weight"]
 	if w.Dtype != zmf.Tensor_Q8_0 {
 		t.Errorf("weight dtype = %v, want Q8_0", w.Dtype)
 	}
-	// 2 blocks of 36 bytes = 72.
-	if len(w.Data) != 72 {
-		t.Errorf("weight data len = %d, want 72", len(w.Data))
+	// 1024/32 = 32 blocks, 32 * 36 = 1152 bytes.
+	if len(w.Data) != 1152 {
+		t.Errorf("weight data len = %d, want 1152", len(w.Data))
+	}
+}
+
+func TestQuantizeModel_SkipNormAndSmall(t *testing.T) {
+	n := 1024
+	vals := make([]float32, n)
+	for i := range vals {
+		vals[i] = float32(i) / float32(n)
+	}
+	smallVals := make([]float32, 32)
+	for i := range smallVals {
+		smallVals[i] = float32(i)
+	}
+
+	model := &zmf.Model{
+		Graph: &zmf.Graph{
+			Parameters: map[string]*zmf.Tensor{
+				"model.layers.0.input_layernorm.weight": {
+					Dtype: zmf.Tensor_FLOAT32,
+					Shape: []int64{int64(n)},
+					Data:  makeFloat32Bytes(vals),
+				},
+				"model.embed_tokens.weight": {
+					Dtype: zmf.Tensor_FLOAT32,
+					Shape: []int64{int64(n)},
+					Data:  makeFloat32Bytes(vals),
+				},
+				"small_tensor": {
+					Dtype: zmf.Tensor_FLOAT32,
+					Shape: []int64{32},
+					Data:  makeFloat32Bytes(smallVals),
+				},
+				"model.layers.0.self_attn.q_proj.weight": {
+					Dtype: zmf.Tensor_FLOAT32,
+					Shape: []int64{int64(n)},
+					Data:  makeFloat32Bytes(vals),
+				},
+			},
+		},
+	}
+
+	err := Model(model, Q4_0)
+	if err != nil {
+		t.Fatalf("QuantizeModel failed: %v", err)
+	}
+
+	// Norm weight should stay FLOAT32.
+	if model.Graph.Parameters["model.layers.0.input_layernorm.weight"].Dtype != zmf.Tensor_FLOAT32 {
+		t.Error("norm weight should not be quantized")
+	}
+	// Embedding weight should stay FLOAT32.
+	if model.Graph.Parameters["model.embed_tokens.weight"].Dtype != zmf.Tensor_FLOAT32 {
+		t.Error("embedding weight should not be quantized")
+	}
+	// Small tensor should stay FLOAT32.
+	if model.Graph.Parameters["small_tensor"].Dtype != zmf.Tensor_FLOAT32 {
+		t.Error("small tensor should not be quantized")
+	}
+	// Large attention weight should be Q4_0.
+	if model.Graph.Parameters["model.layers.0.self_attn.q_proj.weight"].Dtype != zmf.Tensor_Q4_0 {
+		t.Error("attention weight should be quantized to Q4_0")
 	}
 }
 
@@ -124,7 +186,7 @@ func TestQuantizeModel_CompressionRatio(t *testing.T) {
 	model := &zmf.Model{
 		Graph: &zmf.Graph{
 			Parameters: map[string]*zmf.Tensor{
-				"w": {
+				"model.layers.0.mlp.up_proj.weight": {
 					Dtype: zmf.Tensor_FLOAT32,
 					Shape: []int64{int64(n)},
 					Data:  makeFloat32Bytes(vals),
@@ -133,11 +195,11 @@ func TestQuantizeModel_CompressionRatio(t *testing.T) {
 		},
 	}
 
-	origSize := len(model.Graph.Parameters["w"].Data)
+	origSize := len(model.Graph.Parameters["model.layers.0.mlp.up_proj.weight"].Data)
 	if err := Model(model, Q4_0); err != nil {
 		t.Fatal(err)
 	}
-	newSize := len(model.Graph.Parameters["w"].Data)
+	newSize := len(model.Graph.Parameters["model.layers.0.mlp.up_proj.weight"].Data)
 
 	ratio := float64(origSize) / float64(newSize)
 	if ratio < 6.0 {
