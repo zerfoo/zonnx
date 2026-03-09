@@ -28,7 +28,7 @@ func TestQuantizeModel_Q4_0(t *testing.T) {
 			Parameters: map[string]*zmf.Tensor{
 				"model.layers.0.self_attn.q_proj.weight": {
 					Dtype: zmf.Tensor_FLOAT32,
-					Shape: []int64{int64(n)},
+					Shape: []int64{32, 32}, // 2D: 32*32 = 1024
 					Data:  makeFloat32Bytes(vals),
 				},
 				"bias_int64": {
@@ -73,7 +73,7 @@ func TestQuantizeModel_Q8_0(t *testing.T) {
 			Parameters: map[string]*zmf.Tensor{
 				"model.layers.0.mlp.gate_proj.weight": {
 					Dtype: zmf.Tensor_FLOAT32,
-					Shape: []int64{int64(n)},
+					Shape: []int64{32, 32}, // 2D: 32*32 = 1024
 					Data:  makeFloat32Bytes(vals),
 				},
 			},
@@ -126,7 +126,7 @@ func TestQuantizeModel_SkipNormAndSmall(t *testing.T) {
 				},
 				"model.layers.0.self_attn.q_proj.weight": {
 					Dtype: zmf.Tensor_FLOAT32,
-					Shape: []int64{int64(n)},
+					Shape: []int64{32, 32}, // 2D: quantizable
 					Data:  makeFloat32Bytes(vals),
 				},
 			},
@@ -150,9 +150,51 @@ func TestQuantizeModel_SkipNormAndSmall(t *testing.T) {
 	if model.Graph.Parameters["small_tensor"].Dtype != zmf.Tensor_FLOAT32 {
 		t.Error("small tensor should not be quantized")
 	}
-	// Large attention weight should be Q4_0.
+	// Large 2D attention weight should be Q4_0.
 	if model.Graph.Parameters["model.layers.0.self_attn.q_proj.weight"].Dtype != zmf.Tensor_Q4_0 {
 		t.Error("attention weight should be quantized to Q4_0")
+	}
+}
+
+func TestQuantizeModel_Skip1D(t *testing.T) {
+	// 1D vectors (bias, per-channel scales, gate factors) should NOT be quantized
+	// even if they have >= minQuantElements, because Q4 block quantization
+	// produces unacceptable error for 1D vectors.
+	n := 2048 // well above minQuantElements=1024
+	vals := make([]float32, n)
+	for i := range vals {
+		vals[i] = float32(i) / float32(n)
+	}
+
+	model := &zmf.Model{
+		Graph: &zmf.Graph{
+			Parameters: map[string]*zmf.Tensor{
+				"model.layers.0.self_attn.head_scale": {
+					Dtype: zmf.Tensor_FLOAT32,
+					Shape: []int64{int64(n)}, // 1D
+					Data:  makeFloat32Bytes(vals),
+				},
+				"model.layers.0.self_attn.q_proj.weight": {
+					Dtype: zmf.Tensor_FLOAT32,
+					Shape: []int64{64, 32}, // 2D: quantizable
+					Data:  makeFloat32Bytes(vals),
+				},
+			},
+		},
+	}
+
+	err := Model(model, Q4_0)
+	if err != nil {
+		t.Fatalf("QuantizeModel failed: %v", err)
+	}
+
+	// 1D tensor should stay FLOAT32 despite having enough elements.
+	if model.Graph.Parameters["model.layers.0.self_attn.head_scale"].Dtype != zmf.Tensor_FLOAT32 {
+		t.Error("1D tensor should not be quantized")
+	}
+	// 2D tensor should be quantized.
+	if model.Graph.Parameters["model.layers.0.self_attn.q_proj.weight"].Dtype != zmf.Tensor_Q4_0 {
+		t.Error("2D weight should be quantized to Q4_0")
 	}
 }
 
@@ -188,7 +230,7 @@ func TestQuantizeModel_CompressionRatio(t *testing.T) {
 			Parameters: map[string]*zmf.Tensor{
 				"model.layers.0.mlp.up_proj.weight": {
 					Dtype: zmf.Tensor_FLOAT32,
-					Shape: []int64{int64(n)},
+					Shape: []int64{32, 32}, // 2D: 32*32 = 1024
 					Data:  makeFloat32Bytes(vals),
 				},
 			},

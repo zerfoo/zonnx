@@ -83,6 +83,13 @@ func skipQuantize(name string, t *zmf.Tensor) bool {
 		return true
 	}
 
+	// Skip 1D tensors (bias-like, per-channel scales, gate factors).
+	// Q4_0 block quantization with 32 values per block produces
+	// unacceptable error for 1D vectors where values vary significantly.
+	if len(t.Shape) <= 1 {
+		return true
+	}
+
 	// Skip small tensors.
 	numElements := 1
 	for _, d := range t.Shape {
