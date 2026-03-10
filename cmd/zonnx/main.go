@@ -9,12 +9,10 @@ import (
 	"strings" // Added for strings.ToLower
 
 	"github.com/zerfoo/zonnx/pkg/importer"
-	// "github.com/zerfoo/zonnx/pkg/zmf_inspector" // Removed unused import
+	"github.com/zerfoo/zonnx/pkg/quantize"
 	"google.golang.org/protobuf/proto"
 
-	// Import the downloader package
 	"github.com/zerfoo/zonnx/pkg/downloader"
-	// Import the new inspector package
 	"github.com/zerfoo/zonnx/pkg/inspector"
 )
 
@@ -171,18 +169,14 @@ func handleInspect() {
 func handleConvert() {
 	convertCmd := flag.NewFlagSet("convert", flag.ExitOnError)
 	outputFile := convertCmd.String("output", "", "Path for the converted ZMF file. (optional)")
+	quantizeFlag := convertCmd.String("quantize", "", "Quantize weights during conversion (q4_0 or q8_0)")
 
-	// Normalize aliases for stdlib flag parsing (accept --output as an alias for -output)
+	// Normalize aliases for stdlib flag parsing (accept --flag as an alias for -flag)
 	rawArgs := os.Args[2:]
 	normalizedArgs := make([]string, 0, len(rawArgs))
 	for _, a := range rawArgs {
-		if a == "--output" {
-			normalizedArgs = append(normalizedArgs, "-output")
-			continue
-		}
-		if strings.HasPrefix(a, "--output=") {
-			val := strings.TrimPrefix(a, "--output=")
-			normalizedArgs = append(normalizedArgs, "-output="+val)
+		if strings.HasPrefix(a, "--") && !strings.HasPrefix(a, "---") {
+			normalizedArgs = append(normalizedArgs, "-"+strings.TrimPrefix(a, "--"))
 			continue
 		}
 		normalizedArgs = append(normalizedArgs, a)
@@ -210,6 +204,15 @@ func handleConvert() {
 	// Use the refactored importer.ConvertOnnxToZmf directly
 	zmfModel, err := importer.ConvertOnnxToZmf(inputFile)
 	handleErr(err)
+
+	// Apply quantization if requested
+	if *quantizeFlag != "" {
+		qt := quantize.QuantType(strings.ToLower(*quantizeFlag))
+		if err := quantize.Model(zmfModel, qt); err != nil {
+			handleErr(fmt.Errorf("quantization failed: %w", err))
+		}
+		fmt.Printf("Quantized weights to %s\n", qt)
+	}
 
 	// Serialize the ZMF model to a file
 	outBytes, err := proto.Marshal(zmfModel)
@@ -276,7 +279,7 @@ func printUsage() {
 	fmt.Println("  export <input-file.zmf> [-output <output-file.onnx>]")
 	fmt.Println("  inspect <input-file> [--type <onnx|zmf>] [--pretty]")
 	// fmt.Println("  inspect-zmf <input-file.zmf>") // Removed inspect-zmf usage
-	fmt.Println("  convert <input-file.onnx> [-output <output-file.zmf>]")
+	fmt.Println("  convert <input-file.onnx> [-output <output-file.zmf>] [--quantize <q4_0|q8_0>]")
 	fmt.Println("  download --model <huggingface-model-id> [--output <output-directory>] [--api-key <your-api-key> | HF_API_KEY=<your-api-key>]")
 }
 
