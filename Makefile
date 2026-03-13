@@ -23,6 +23,7 @@ format:
 
 build:
 	mkdir -p bin
+	go build -o bin/zonnx ./cmd/zonnx
 	go build -o bin/train cmd/train/main.go
 	go build -o bin/predict cmd/predict/main.go
 	go build -o bin/process_features cmd/process_features/main.go
