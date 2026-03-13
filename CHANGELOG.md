@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/zerfoo/zonnx/compare/v0.5.0...v0.5.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* update goreleaser config for v2.6+ and fix hardcoded test path ([0166e1c](https://github.com/zerfoo/zonnx/commit/0166e1c933754a1d3c1b259ec03bd29b5a29ceb3))
+
 ## [0.5.0](https://github.com/zerfoo/zonnx/compare/v0.4.0...v0.5.0) (2026-03-13)
 
 
