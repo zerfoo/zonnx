@@ -36,6 +36,9 @@ go.work.sum
 /zonnx
 model.zmf
 
+# GoReleaser
+dist/
+
 # Local build artifacts
 /main
 /cmd/zonnx/zonnx
