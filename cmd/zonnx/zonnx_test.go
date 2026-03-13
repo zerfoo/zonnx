@@ -184,7 +184,7 @@ func TestDownloadCommand(t *testing.T) {
 
 			// Build the zonnx executable
 			cmd := exec.Command("go", "build", "-o", filepath.Join(tempDir, "zonnx"), "./cmd/zonnx")
-			cmd.Dir = "/Users/dndungu/Code/dndungu/zerfoo/zonnx" // Explicitly set working directory
+			cmd.Dir = filepath.Join("..", "..")
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
 				t.Fatalf("Failed to build zonnx executable: %v", err)
