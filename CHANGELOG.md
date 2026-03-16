@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/zerfoo/zonnx/compare/v0.5.0...v0.6.0) (2026-03-16)
+
+
+### Features
+
+* **cli:** output GGUF instead of ZMF (ADR-037) ([4ddf906](https://github.com/zerfoo/zonnx/commit/4ddf90621bfe7ebf8aa50faf73ed26ddc34afb2d))
+* **gguf:** add ONNX to GGUF metadata mapping ([ab6fa8e](https://github.com/zerfoo/zonnx/commit/ab6fa8ed002ed3636fe8cd96d6302f0498883db4))
+* **gguf:** add ONNX to GGUF tensor name mapping ([eaa5aa1](https://github.com/zerfoo/zonnx/commit/eaa5aa1f5a32c6266937602118a53e1341342cfa))
+* **gguf:** implement GGUF v3 binary writer ([8e7f233](https://github.com/zerfoo/zonnx/commit/8e7f233174dd00c1a380c0bb0010393cb67fa6f3))
+
+
+### Bug Fixes
+
+* update goreleaser config for v2.6+ and fix hardcoded test path ([0166e1c](https://github.com/zerfoo/zonnx/commit/0166e1c933754a1d3c1b259ec03bd29b5a29ceb3))
+
 ## [0.5.0](https://github.com/zerfoo/zonnx/compare/v0.4.0...v0.5.0) (2026-03-13)
 
 
