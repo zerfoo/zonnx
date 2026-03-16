@@ -8,12 +8,14 @@ import (
 	"path/filepath"
 	"strings" // Added for strings.ToLower
 
-	"github.com/zerfoo/zonnx/pkg/importer"
-	"github.com/zerfoo/zonnx/pkg/quantize"
-	"google.golang.org/protobuf/proto"
+	"encoding/json"
 
+	"github.com/zerfoo/zmf"
 	"github.com/zerfoo/zonnx/pkg/downloader"
+	"github.com/zerfoo/zonnx/pkg/gguf"
+	"github.com/zerfoo/zonnx/pkg/importer"
 	"github.com/zerfoo/zonnx/pkg/inspector"
+	"github.com/zerfoo/zonnx/pkg/quantize"
 )
 
 func main() {
@@ -168,8 +170,9 @@ func handleInspect() {
 
 func handleConvert() {
 	convertCmd := flag.NewFlagSet("convert", flag.ExitOnError)
-	outputFile := convertCmd.String("output", "", "Path for the converted ZMF file. (optional)")
+	outputFile := convertCmd.String("output", "", "Path for the output GGUF file. (optional)")
 	quantizeFlag := convertCmd.String("quantize", "", "Quantize weights during conversion (q4_0 or q8_0)")
+	archFlag := convertCmd.String("arch", "llama", "Model architecture name for GGUF metadata")
 
 	// Normalize aliases for stdlib flag parsing (accept --flag as an alias for -flag)
 	rawArgs := os.Args[2:]
@@ -196,16 +199,16 @@ func handleConvert() {
 
 	if *outputFile == "" {
 		base := strings.TrimSuffix(filepath.Base(inputFile), filepath.Ext(inputFile))
-		*outputFile = filepath.Join(filepath.Dir(inputFile), base+".zmf")
+		*outputFile = filepath.Join(filepath.Dir(inputFile), base+".gguf")
 	}
 
 	fmt.Printf("Converting ONNX model from: %s\n", inputFile)
 
-	// Use the refactored importer.ConvertOnnxToZmf directly
+	// Load ONNX model via importer and convert to ZMF for tensor processing.
 	zmfModel, err := importer.ConvertOnnxToZmf(inputFile)
 	handleErr(err)
 
-	// Apply quantization if requested
+	// Apply quantization if requested (operates on ZMF intermediate).
 	if *quantizeFlag != "" {
 		qt := quantize.QuantType(strings.ToLower(*quantizeFlag))
 		if err := quantize.Model(zmfModel, qt); err != nil {
@@ -214,21 +217,84 @@ func handleConvert() {
 		fmt.Printf("Quantized weights to %s\n", qt)
 	}
 
-	// Serialize the ZMF model to a file
-	outBytes, err := proto.Marshal(zmfModel)
-	handleErr(err)
-
-	// Ensure parent directories exist for the output path
+	// Ensure parent directories exist for the output path.
 	if dir := filepath.Dir(*outputFile); dir != "." {
 		if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
 			handleErr(mkErr)
 		}
 	}
 
-	err = os.WriteFile(*outputFile, outBytes, 0o644)
+	outFile, err := os.Create(*outputFile)
+	handleErr(err)
+	defer func() {
+		if cerr := outFile.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "Error closing output file: %v\n", cerr)
+		}
+	}()
+
+	w := gguf.NewWriter(outFile)
+
+	// Write GGUF metadata from ONNX model properties.
+	config := extractONNXConfig(inputFile)
+	for _, entry := range gguf.MapMetadata(*archFlag, config) {
+		switch entry.Type {
+		case gguf.TypeString:
+			w.AddMetadataString(entry.Key, entry.Value.(string))
+		case gguf.TypeUint32:
+			w.AddMetadataUint32(entry.Key, entry.Value.(uint32))
+		case gguf.TypeFloat32:
+			w.AddMetadataFloat32(entry.Key, entry.Value.(float32))
+		}
+	}
+
+	// Write tensors from the converted model.
+	for name, t := range zmfModel.Graph.Parameters {
+		ggufName := gguf.MapTensorName(name)
+		dtype := zmfDtypeToGGUF(t.Dtype)
+		shape := make([]uint64, len(t.Shape))
+		for i, d := range t.Shape {
+			shape[i] = uint64(d)
+		}
+		w.AddTensor(ggufName, dtype, shape, t.Data)
+	}
+
+	err = w.Flush()
 	handleErr(err)
 
-	fmt.Printf("Successfully converted and saved model to: %s\n", *outputFile)
+	fmt.Printf("Successfully converted and saved GGUF model to: %s\n", *outputFile)
+}
+
+// extractONNXConfig reads a config.json from the same directory as the ONNX model.
+// Returns an empty map if no config is found.
+func extractONNXConfig(modelPath string) map[string]interface{} {
+	configPath := filepath.Join(filepath.Dir(modelPath), "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return make(map[string]interface{})
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return make(map[string]interface{})
+	}
+	return config
+}
+
+// zmfDtypeToGGUF maps ZMF tensor data types to GGUF dtype constants.
+func zmfDtypeToGGUF(dtype zmf.Tensor_DataType) uint32 {
+	switch dtype {
+	case zmf.Tensor_FLOAT32:
+		return gguf.DTypeF32
+	case zmf.Tensor_FLOAT16:
+		return gguf.DTypeF16
+	case zmf.Tensor_BFLOAT16:
+		return gguf.DTypeBF16
+	case zmf.Tensor_Q4_0:
+		return gguf.DTypeQ4_0
+	case zmf.Tensor_Q8_0:
+		return gguf.DTypeQ8_0
+	default:
+		return gguf.DTypeF32
+	}
 }
 
 func handleDownload() {
@@ -279,7 +345,7 @@ func printUsage() {
 	fmt.Println("  export <input-file.zmf> [-output <output-file.onnx>]")
 	fmt.Println("  inspect <input-file> [--type <onnx|zmf>] [--pretty]")
 	// fmt.Println("  inspect-zmf <input-file.zmf>") // Removed inspect-zmf usage
-	fmt.Println("  convert <input-file.onnx> [-output <output-file.zmf>] [--quantize <q4_0|q8_0>]")
+	fmt.Println("  convert <input-file.onnx> [-output <output-file.gguf>] [--arch <architecture>] [--quantize <q4_0|q8_0>]")
 	fmt.Println("  download --model <huggingface-model-id> [--output <output-directory>] [--api-key <your-api-key> | HF_API_KEY=<your-api-key>]")
 }
 
