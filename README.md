@@ -1,26 +1,25 @@
 # zonnx
 
-This tool is a standalone command-line utility responsible for converting machine learning models between the ONNX format and the Zerfoo Model Format (ZMF). It also provides functionality to download ONNX models directly from HuggingFace Hub.
+This tool is a standalone command-line utility responsible for converting machine learning models from the ONNX format to GGUF. It also provides functionality to download ONNX models directly from HuggingFace Hub.
 
 ## Features
 
-- **ONNX → ZMF conversion (fast, deterministic)**: Produce portable ZMF artifacts fully decoupled from the `zerfoo` runtime.
-- **Model inspection (ONNX and ZMF)**: Introspect model metadata, IOs, nodes and tensor stats. Output is JSON-friendly; `--pretty` planned.
+- **ONNX → GGUF conversion (fast, deterministic)**: Produce portable GGUF files compatible with the `zerfoo` runtime and llama.cpp.
+- **Model inspection (ONNX and GGUF)**: Introspect model metadata, IOs, nodes and tensor stats. Output is JSON-friendly; `--pretty` planned.
 - **HuggingFace integration**: Download ONNX models and common tokenizer files in one step.
 - **CGO-free builds**: Ships as a single static binary. Easy to distribute and run in minimal containers.
 - **Clean separation of concerns**: Converter lives outside the training/runtime stack. No `github.com/zerfoo/zerfoo` imports in conversion code.
-- **ZMF → ONNX export (planned)**: Round-trip conversion is on the roadmap.
 
 ## Architectural Principles
 
-`zonnx` is designed as a standalone model converter, strictly decoupled from the `zerfoo` runtime. Its primary responsibility is to transform ONNX models into the Zerfoo Model Format (ZMF), which serves as the universal intermediate representation for `zerfoo`.
+`zonnx` is designed as a standalone model converter, strictly decoupled from the `zerfoo` runtime. Its primary responsibility is to transform ONNX models into GGUF, which serves as the universal model format for `zerfoo`.
 
 Key principles:
 
-- **ZMF-Only Emission**: `zonnx` emits only ZMF models. It does not contain any `zerfoo` runtime code, graph building logic, or direct dependencies on `zerfoo`'s internal components (e.g., `compute`, `graph`, `model`, `numeric`, `tensor`).
-- **Explicit ZMF Schema**: The ZMF schema is designed to be explicit, capturing all necessary model attributes and shapes directly, without relying on runtime inference of ONNX rules.
+- **GGUF-Only Emission**: `zonnx` emits only GGUF files. It does not contain any `zerfoo` runtime code, graph building logic, or direct dependencies on `zerfoo`'s internal components (e.g., `compute`, `graph`, `model`, `numeric`, `tensor`).
+- **Explicit Schema**: The GGUF output captures all necessary model attributes and shapes directly, without relying on runtime inference of ONNX rules.
 - **No `zerfoo` Imports**: The `zonnx` codebase (outside of documentation, tests, and examples) must not import any packages from `github.com/zerfoo/zerfoo`.
-- **No ONNX in `zerfoo`**: Conversely, the `zerfoo` runtime must not contain any ONNX-specific code or dependencies. It consumes only ZMF models.
+- **No ONNX in `zerfoo`**: Conversely, the `zerfoo` runtime must not contain any ONNX-specific code or dependencies. It consumes only GGUF models.
 
 This strict separation ensures modularity, independent development, and maintainability of both the converter and the runtime.
 
@@ -50,12 +49,12 @@ Notes:
 # 1) Download an ONNX model and tokenizer files from HuggingFace
 zonnx download --model google/gemma-2-2b-it --output ./models
 
-# 2) Convert ONNX → ZMF (flags must come before positional args)
-zonnx convert -output ./models/model.zmf ./models/model.onnx
+# 2) Convert ONNX → GGUF (flags must come before positional args)
+zonnx convert -output ./models/model.gguf ./models/model.onnx
 
 # 3) Inspect either format (flags before input)
 zonnx inspect -pretty ./models/model.onnx
-zonnx inspect -pretty ./models/model.zmf
+zonnx inspect -pretty ./models/model.gguf
 ```
 
 ### Commands
@@ -99,67 +98,64 @@ When a model is downloaded, `zonnx` will automatically attempt to identify and d
 
 #### `import`
 
-Import ONNX and emit ZMF. This is a future-friendly alias for `convert`.
+Import ONNX and emit GGUF. This is a future-friendly alias for `convert`.
 
 Status: planned; use `convert` today.
 
 #### `export`
 
-Export ZMF back to ONNX.
+Export GGUF back to ONNX.
 
 Status: planned; coming soon.
 
 #### `inspect`
 
-Inspect either ONNX or ZMF. Type can be inferred from extension or set explicitly.
+Inspect either ONNX or GGUF. Type can be inferred from extension or set explicitly.
 
 Syntax:
 
 ```bash
-zonnx inspect [-type onnx|zmf] [-pretty] <input-file>
+zonnx inspect [-type onnx|gguf] [-pretty] <input-file>
 ```
 
 Examples:
 
 ```bash
 zonnx inspect -pretty ./path/to/model.onnx
-zonnx inspect -type zmf -pretty ./path/to/model.zmf
+zonnx inspect -type gguf -pretty ./path/to/model.gguf
 ```
 
 Notes:
 - `--pretty` human-friendly printing is planned; JSON schema output is the target.
 
-#### `inspect-zmf`
-
-Deprecated. Use `inspect <file.zmf>` or `inspect --type zmf`.
-
 #### `convert`
 
-Convert ONNX → ZMF. This is the primary conversion command.
+Convert ONNX → GGUF. This is the primary conversion command.
 
 Syntax:
 
 ```bash
-zonnx convert [-output <output-file.zmf>] <input-file.onnx>
+zonnx convert [-output <output-file.gguf>] <input-file.onnx>
 ```
 
 Example:
 
 ```bash
-zonnx convert -output ./models/encoder.zmf ./models/encoder.onnx
+zonnx convert -output ./models/encoder.gguf ./models/encoder.onnx
 ```
 
 Notes:
 - Flags must appear before the first positional argument when using Go's standard `flag` package.
 - The `convert` command accepts an alias `--output` in addition to `-output`.
-- If no output is specified, the default is `<input-dir>/<input-base>.zmf`.
+- If no output is specified, the default is `<input-dir>/<input-base>.gguf`.
 - Parent directories for the output path are created automatically.
 
-## Why ZMF?
+## Why GGUF?
 
-Zerfoo Model Format (ZMF) is a compact, explicit representation designed for fast loading and deterministic execution by the Zerfoo runtime. Benefits:
+GGUF is a compact, mmap-friendly model format designed for fast loading and efficient inference. Benefits:
 
 - Explicit shapes and attributes; no reliance on ONNX runtime semantics at load time.
+- Compatible with llama.cpp and the broader ecosystem.
 - Portable files, amenable to signing and caching.
 - Decouples model authoring/conversion from runtime execution.
 
