@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/zerfoo/zonnx/compare/v0.6.0...v0.7.0) (2026-03-21)
+
+
+### Features
+
+* **converter:** add safetensors-to-GGUF conversion for BERT models ([86f8918](https://github.com/zerfoo/zonnx/commit/86f89181a06ff82571f988518e46167640c27feb))
+* **gguf:** add BERT/RoBERTa tensor name and metadata mapping ([349920f](https://github.com/zerfoo/zonnx/commit/349920fdae4b36ba8139f3abf0466b06197744e8))
+
 ## [0.6.0](https://github.com/zerfoo/zonnx/compare/v0.5.0...v0.6.0) (2026-03-16)
 
 
