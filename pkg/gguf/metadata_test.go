@@ -105,6 +105,69 @@ func TestMapMetadata_DifferentArch(t *testing.T) {
 	}
 }
 
+func TestMapMetadata_BERT(t *testing.T) {
+	config := map[string]interface{}{
+		"hidden_size":              float64(768),
+		"num_hidden_layers":        float64(12),
+		"num_attention_heads":      float64(12),
+		"intermediate_size":        float64(3072),
+		"vocab_size":               float64(30522),
+		"max_position_embeddings":  float64(512),
+		"layer_norm_eps":           float64(1e-12),
+		"num_labels":               float64(3),
+	}
+
+	entries := MapMetadata("bert", config)
+
+	entryMap := make(map[string]MetadataEntry)
+	for _, e := range entries {
+		entryMap[e.Key] = e
+	}
+
+	expected := map[string]MetadataEntry{
+		"general.architecture":                {Type: TypeString, Value: "bert"},
+		"general.file_type":                   {Type: TypeUint32, Value: uint32(0)},
+		"bert.embedding_length":               {Type: TypeUint32, Value: uint32(768)},
+		"bert.block_count":                    {Type: TypeUint32, Value: uint32(12)},
+		"bert.attention.head_count":            {Type: TypeUint32, Value: uint32(12)},
+		"bert.feed_forward_length":             {Type: TypeUint32, Value: uint32(3072)},
+		"bert.vocab_size":                      {Type: TypeUint32, Value: uint32(30522)},
+		"bert.context_length":                  {Type: TypeUint32, Value: uint32(512)},
+		"bert.attention.layer_norm_epsilon":    {Type: TypeFloat32, Value: float32(1e-12)},
+		"bert.num_labels":                      {Type: TypeUint32, Value: uint32(3)},
+		"bert.pooler_type":                     {Type: TypeString, Value: "cls"},
+	}
+
+	if len(entries) != len(expected) {
+		t.Fatalf("expected %d entries, got %d", len(expected), len(entries))
+	}
+
+	for key, want := range expected {
+		got, ok := entryMap[key]
+		if !ok {
+			t.Errorf("missing entry for key %q", key)
+			continue
+		}
+		if got.Type != want.Type {
+			t.Errorf("key %q: type = %d, want %d", key, got.Type, want.Type)
+		}
+		switch wv := want.Value.(type) {
+		case uint32:
+			if gv, ok := got.Value.(uint32); !ok || gv != wv {
+				t.Errorf("key %q: value = %v, want %v", key, got.Value, wv)
+			}
+		case float32:
+			if gv, ok := got.Value.(float32); !ok || gv != wv {
+				t.Errorf("key %q: value = %v, want %v", key, got.Value, wv)
+			}
+		case string:
+			if gv, ok := got.Value.(string); !ok || gv != wv {
+				t.Errorf("key %q: value = %v, want %v", key, got.Value, wv)
+			}
+		}
+	}
+}
+
 func TestMapMetadata_PartialConfig(t *testing.T) {
 	config := map[string]interface{}{
 		"hidden_size":         float64(2048),

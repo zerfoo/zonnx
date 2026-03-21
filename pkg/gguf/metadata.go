@@ -30,6 +30,21 @@ var configMapping = []struct {
 	{"rope_theta", "{arch}.rope.freq_base", TypeFloat32},
 }
 
+// bertExtraMapping defines BERT-specific config keys not covered by configMapping.
+var bertExtraMapping = []struct {
+	hfKey    string
+	ggufKey  string
+	ggufType uint32
+}{
+	{"layer_norm_eps", "{arch}.attention.layer_norm_epsilon", TypeFloat32},
+	{"num_labels", "{arch}.num_labels", TypeUint32},
+}
+
+// bertStaticMetadata defines BERT-specific metadata with fixed values.
+var bertStaticMetadata = []MetadataEntry{
+	{Key: "{arch}.pooler_type", Type: TypeString, Value: "cls"},
+}
+
 // MapMetadata converts HuggingFace/ONNX config fields to GGUF metadata entries.
 func MapMetadata(arch string, config map[string]interface{}) []MetadataEntry {
 	entries := []MetadataEntry{
@@ -54,6 +69,33 @@ func MapMetadata(arch string, config map[string]interface{}) []MetadataEntry {
 			if f, err := toFloat32(val); err == nil {
 				entries = append(entries, MetadataEntry{Key: key, Type: TypeFloat32, Value: f})
 			}
+		}
+	}
+
+	if arch == "bert" {
+		for _, m := range bertExtraMapping {
+			val, ok := config[m.hfKey]
+			if !ok {
+				continue
+			}
+			key := replaceArch(m.ggufKey, arch)
+			switch m.ggufType {
+			case TypeUint32:
+				if u, err := toUint32(val); err == nil {
+					entries = append(entries, MetadataEntry{Key: key, Type: TypeUint32, Value: u})
+				}
+			case TypeFloat32:
+				if f, err := toFloat32(val); err == nil {
+					entries = append(entries, MetadataEntry{Key: key, Type: TypeFloat32, Value: f})
+				}
+			}
+		}
+		for _, m := range bertStaticMetadata {
+			entries = append(entries, MetadataEntry{
+				Key:   replaceArch(m.Key, arch),
+				Type:  m.Type,
+				Value: m.Value,
+			})
 		}
 	}
 
