@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 
 	"github.com/zerfoo/zmf"
+	"github.com/zerfoo/zonnx/pkg/converter"
 	"github.com/zerfoo/zonnx/pkg/downloader"
 	"github.com/zerfoo/zonnx/pkg/gguf"
 	"github.com/zerfoo/zonnx/pkg/importer"
@@ -173,6 +174,7 @@ func handleConvert() {
 	outputFile := convertCmd.String("output", "", "Path for the output GGUF file. (optional)")
 	quantizeFlag := convertCmd.String("quantize", "", "Quantize weights during conversion (q4_0 or q8_0)")
 	archFlag := convertCmd.String("arch", "llama", "Model architecture name for GGUF metadata")
+	formatFlag := convertCmd.String("format", "onnx", "Input format: onnx or safetensors")
 
 	// Normalize aliases for stdlib flag parsing (accept --flag as an alias for -flag)
 	rawArgs := os.Args[2:]
@@ -192,7 +194,7 @@ func handleConvert() {
 	inputFile := convertCmd.Arg(0)
 
 	if inputFile == "" {
-		fmt.Println("Error: Input file is required for 'convert' command.")
+		fmt.Println("Error: Input path is required for 'convert' command.")
 		convertCmd.Usage()
 		os.Exit(1)
 	}
@@ -200,6 +202,15 @@ func handleConvert() {
 	if *outputFile == "" {
 		base := strings.TrimSuffix(filepath.Base(inputFile), filepath.Ext(inputFile))
 		*outputFile = filepath.Join(filepath.Dir(inputFile), base+".gguf")
+	}
+
+	// Safetensors path: inputFile is a directory containing config.json + model.safetensors.
+	if strings.ToLower(*formatFlag) == "safetensors" {
+		fmt.Printf("Converting safetensors model from: %s\n", inputFile)
+		err := converter.ConvertSafetensorsToGGUF(inputFile, *outputFile, *archFlag)
+		handleErr(err)
+		fmt.Printf("Successfully converted and saved GGUF model to: %s\n", *outputFile)
+		return
 	}
 
 	fmt.Printf("Converting ONNX model from: %s\n", inputFile)
@@ -345,7 +356,7 @@ func printUsage() {
 	fmt.Println("  export <input-file.zmf> [-output <output-file.onnx>]")
 	fmt.Println("  inspect <input-file> [--type <onnx|zmf>] [--pretty]")
 	// fmt.Println("  inspect-zmf <input-file.zmf>") // Removed inspect-zmf usage
-	fmt.Println("  convert <input-file.onnx> [-output <output-file.gguf>] [--arch <architecture>] [--quantize <q4_0|q8_0>]")
+	fmt.Println("  convert <input> [-output <output-file.gguf>] [--arch <architecture>] [--format <onnx|safetensors>] [--quantize <q4_0|q8_0>]")
 	fmt.Println("  download --model <huggingface-model-id> [--output <output-directory>] [--api-key <your-api-key> | HF_API_KEY=<your-api-key>]")
 }
 
