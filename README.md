@@ -1,47 +1,62 @@
 # zonnx
 
-This tool is a standalone command-line utility responsible for converting machine learning models from the ONNX format to GGUF. It also provides functionality to download ONNX models directly from HuggingFace Hub.
+A standalone command-line tool for converting machine learning models to GGUF format. Supports ONNX and SafeTensors inputs, with built-in HuggingFace Hub integration for downloading models.
 
 ## Features
 
-- **ONNX → GGUF conversion (fast, deterministic)**: Produce portable GGUF files compatible with the `zerfoo` runtime and llama.cpp.
-- **Model inspection (ONNX and GGUF)**: Introspect model metadata, IOs, nodes and tensor stats. Output is JSON-friendly; `--pretty` planned.
-- **HuggingFace integration**: Download ONNX models and common tokenizer files in one step.
+- **ONNX / SafeTensors → GGUF conversion**: Produce portable GGUF files compatible with the `zerfoo` runtime and llama.cpp.
+- **Model inspection**: Introspect model metadata, IOs, nodes and tensor stats for ONNX and GGUF files. JSON output with `--pretty` planned.
+- **HuggingFace integration**: Download ONNX models and tokenizer files in one step.
+- **Post-conversion quantization**: Quantize weights to Q4_0 or Q8_0 during conversion.
 - **CGO-free builds**: Ships as a single static binary. Easy to distribute and run in minimal containers.
-- **Clean separation of concerns**: Converter lives outside the training/runtime stack. No `github.com/zerfoo/zerfoo` imports in conversion code.
+- **Architecture-aware mappings**: Tensor name and metadata mappings tuned per model family.
 
-## Architectural Principles
+## Supported Models
 
-`zonnx` is designed as a standalone model converter, strictly decoupled from the `zerfoo` runtime. Its primary responsibility is to transform ONNX models into GGUF, which serves as the universal model format for `zerfoo`.
+zonnx maps tensor names and metadata to GGUF conventions for each architecture family. The `--arch` flag selects the mapping.
 
-Key principles:
+| Architecture | `--arch` value | Input Formats | Tensor Mapping | Notes |
+|-------------|----------------|---------------|----------------|-------|
+| Llama | `llama` (default) | ONNX | Decoder layers (`model.layers.N.*`) | Llama 3, Code Llama, etc. |
+| Gemma | `gemma` | ONNX | Decoder layers (`model.layers.N.*`) | Gemma, Gemma 2, Gemma 3 |
+| BERT | `bert` | ONNX, SafeTensors | Encoder layers (`bert.encoder.layer.N.*`) | Classification, embeddings, pooler |
+| RoBERTa | `roberta` | ONNX, SafeTensors | Encoder layers (`roberta.encoder.layer.N.*`) | Same layer structure as BERT |
 
-- **GGUF-Only Emission**: `zonnx` emits only GGUF files. It does not contain any `zerfoo` runtime code, graph building logic, or direct dependencies on `zerfoo`'s internal components (e.g., `compute`, `graph`, `model`, `numeric`, `tensor`).
-- **Explicit Schema**: The GGUF output captures all necessary model attributes and shapes directly, without relying on runtime inference of ONNX rules.
-- **No `zerfoo` Imports**: The `zonnx` codebase (outside of documentation, tests, and examples) must not import any packages from `github.com/zerfoo/zerfoo`.
-- **No ONNX in `zerfoo`**: Conversely, the `zerfoo` runtime must not contain any ONNX-specific code or dependencies. It consumes only GGUF models.
+Any architecture string can be passed via `--arch`. The metadata mapping is generic (maps `hidden_size`, `num_hidden_layers`, etc. to `{arch}.*` GGUF keys). However, tensor name mapping currently covers Llama-style decoder models and BERT/RoBERTa encoder models. Unsupported tensor name patterns pass through unchanged.
 
-This strict separation ensures modularity, independent development, and maintainability of both the converter and the runtime.
+### Metadata Mapped
+
+These HuggingFace `config.json` fields are mapped to GGUF metadata for all architectures:
+
+| config.json field | GGUF key |
+|-------------------|----------|
+| `hidden_size` | `{arch}.embedding_length` |
+| `num_hidden_layers` | `{arch}.block_count` |
+| `num_attention_heads` | `{arch}.attention.head_count` |
+| `num_key_value_heads` | `{arch}.attention.head_count_kv` |
+| `intermediate_size` | `{arch}.feed_forward_length` |
+| `vocab_size` | `{arch}.vocab_size` |
+| `max_position_embeddings` | `{arch}.context_length` |
+| `rms_norm_eps` | `{arch}.attention.layer_norm_rms_epsilon` |
+| `rope_theta` | `{arch}.rope.freq_base` |
+
+BERT/RoBERTa additionally map `layer_norm_eps`, `num_labels`, and `pooler_type`.
 
 ## Usage
 
 ### Installation
 
-Install the CLI directly:
-
 ```bash
 go install github.com/zerfoo/zonnx/cmd/zonnx@latest
 ```
 
-Or build from source at the repo root:
+Or build from source:
 
 ```bash
 go build -o zonnx ./cmd/zonnx
 ```
 
-Notes:
-- Requires Go specified in `go.mod` (currently `go 1.25`).
-- CGO is not required; the module is tested to build with `CGO_ENABLED=0`.
+Requires Go 1.26+. CGO is not required (`CGO_ENABLED=0` works).
 
 ### Quickstart
 
@@ -49,121 +64,87 @@ Notes:
 # 1) Download an ONNX model and tokenizer files from HuggingFace
 zonnx download --model google/gemma-2-2b-it --output ./models
 
-# 2) Convert ONNX → GGUF (flags must come before positional args)
-zonnx convert -output ./models/model.gguf ./models/model.onnx
+# 2) Convert ONNX → GGUF
+zonnx convert --arch gemma --output ./models/model.gguf ./models/model.onnx
 
-# 3) Inspect either format (flags before input)
-zonnx inspect -pretty ./models/model.onnx
-zonnx inspect -pretty ./models/model.gguf
+# 3) Convert SafeTensors → GGUF (pass directory containing config.json + model.safetensors)
+zonnx convert --format safetensors --arch bert --output ./models/model.gguf ./models/bert-dir/
+
+# 4) Convert with quantization
+zonnx convert --quantize q4_0 --output ./models/model-q4.gguf ./models/model.onnx
+
+# 5) Inspect either format
+zonnx inspect --pretty ./models/model.onnx
+zonnx inspect --pretty ./models/model.gguf
 ```
 
 ### Commands
 
-#### `download`
+#### `convert`
 
-Downloads an ONNX model and its associated tokenizer files from HuggingFace Hub.
-
-**Syntax:**
+Convert ONNX or SafeTensors models to GGUF.
 
 ```bash
-./zonnx download --model <huggingface-model-id> [--output <output-directory>] [--api-key <your-api-key>]
+zonnx convert [flags] <input>
 ```
 
-**Arguments:**
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--output` | `<input-dir>/<input-base>.gguf` | Output GGUF file path |
+| `--arch` | `llama` | Model architecture for metadata/tensor mapping |
+| `--format` | `onnx` | Input format: `onnx` or `safetensors` |
+| `--quantize` | (none) | Quantize weights: `q4_0` or `q8_0` |
 
-- `--model <huggingface-model-id>`: (Required) The ID of the HuggingFace model to download (e.g., `openai/whisper-tiny.en`).
-- `--output <output-directory>`: (Optional) The directory where the model and tokenizer files will be saved. Defaults to the current directory (`.`).
-- `--api-key <your-api-key>`: (Optional) Your HuggingFace API key for authenticated downloads.
+For ONNX input, `<input>` is a `.onnx` model file. For SafeTensors, `<input>` is a directory containing `config.json` and `model.safetensors`.
 
-**API Key Configuration:**
+#### `download`
 
-For models that require authentication (e.g., private models or models with restricted access), you can provide your HuggingFace API key in one of two ways:
+Download an ONNX model and tokenizer files from HuggingFace Hub.
 
-1.  **Using the `--api-key` flag:**
-    Pass your API key directly as a command-line argument:
-    ```bash
-    ./zonnx download --model google/gemma-2-2b-it --api-key hf_YOUR_API_KEY
-    ```
-    Replace `hf_YOUR_API_KEY` with your actual HuggingFace API key.
+```bash
+zonnx download --model <huggingface-model-id> [--output <dir>] [--api-key <key>]
+```
 
-2.  **Using the `HF_API_KEY` environment variable:**
-    Set the `HF_API_KEY` environment variable before running the `zonnx` command:
-    ```bash
-    export HF_API_KEY=hf_YOUR_API_KEY
-    ./zonnx download --model google/gemma-2-2b-it
-    ```
-    The `--api-key` flag takes precedence over the `HF_API_KEY` environment variable if both are provided.
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | (required) | HuggingFace model ID (e.g., `google/gemma-2-2b-it`) |
+| `--output` | `.` | Output directory |
+| `--api-key` | `$HF_API_KEY` | HuggingFace API key for authenticated downloads |
 
-When a model is downloaded, `zonnx` will automatically attempt to identify and download common tokenizer-related files (like `tokenizer.json`, `vocab.txt`, etc.) found in the same HuggingFace repository. These files will be saved alongside the ONNX model in the specified output directory.
-
-#### `import`
-
-Import ONNX and emit GGUF. This is a future-friendly alias for `convert`.
-
-Status: planned; use `convert` today.
-
-#### `export`
-
-Export GGUF back to ONNX.
-
-Status: planned; coming soon.
+The `--api-key` flag takes precedence over the `HF_API_KEY` environment variable.
 
 #### `inspect`
 
-Inspect either ONNX or GGUF. Type can be inferred from extension or set explicitly.
-
-Syntax:
+Inspect ONNX or GGUF model files.
 
 ```bash
-zonnx inspect [-type onnx|gguf] [-pretty] <input-file>
+zonnx inspect [--type onnx|gguf] [--pretty] <input-file>
 ```
 
-Examples:
+Type is inferred from file extension when not specified.
 
-```bash
-zonnx inspect -pretty ./path/to/model.onnx
-zonnx inspect -type gguf -pretty ./path/to/model.gguf
-```
+#### `import` / `export`
 
-Notes:
-- `--pretty` human-friendly printing is planned; JSON schema output is the target.
+Future-friendly aliases. `import` is an alias for `convert`. `export` (GGUF → ONNX) is planned.
 
-#### `convert`
+## Architectural Principles
 
-Convert ONNX → GGUF. This is the primary conversion command.
+zonnx is strictly decoupled from the `zerfoo` runtime:
 
-Syntax:
-
-```bash
-zonnx convert [-output <output-file.gguf>] <input-file.onnx>
-```
-
-Example:
-
-```bash
-zonnx convert -output ./models/encoder.gguf ./models/encoder.onnx
-```
-
-Notes:
-- Flags must appear before the first positional argument when using Go's standard `flag` package.
-- The `convert` command accepts an alias `--output` in addition to `-output`.
-- If no output is specified, the default is `<input-dir>/<input-base>.gguf`.
-- Parent directories for the output path are created automatically.
-
-## Why GGUF?
-
-GGUF is a compact, mmap-friendly model format designed for fast loading and efficient inference. Benefits:
-
-- Explicit shapes and attributes; no reliance on ONNX runtime semantics at load time.
-- Compatible with llama.cpp and the broader ecosystem.
-- Portable files, amenable to signing and caching.
-- Decouples model authoring/conversion from runtime execution.
+- **GGUF-only output**: Emits only GGUF files. No runtime code.
+- **No `zerfoo` imports**: The zonnx codebase does not import `github.com/zerfoo/zerfoo`.
+- **No ONNX in `zerfoo`**: The zerfoo runtime consumes only GGUF models.
+- **Explicit schema**: GGUF output captures all model attributes directly, without relying on ONNX runtime semantics.
 
 ## Development
 
-- Test: `make test` (runs `go test ./...`)
-- Lint: `make lint` (runs `golangci-lint run`)
-- Lint (auto-fix): `make lint-fix`
-- Format: `make format` (gofmt + goimports + gofumpt if available)
+```bash
+make test       # go test ./...
+make lint       # golangci-lint run
+make lint-fix   # golangci-lint run --fix
+make format     # gofmt + goimports
+```
 
-The codebase is intentionally free of `github.com/zerfoo/zerfoo` imports in conversion paths to preserve a strict boundary between conversion and runtime.
+## License
+
+Apache 2.0

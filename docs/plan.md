@@ -2,7 +2,7 @@
 
 ## 1. Context
 
-See docs/design.md for full context. zonnx is a standalone ONNX-to-ZMF converter and model downloader CLI tool.
+See docs/design.md for full context. zonnx is a standalone ONNX/SafeTensors-to-GGUF converter and model downloader CLI tool.
 
 ## 2. Checkable Todo Board
 
