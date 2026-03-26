@@ -6,3 +6,5 @@ require (
 	github.com/zerfoo/zmf v0.4.0
 	google.golang.org/protobuf v1.36.8
 )
+
+require github.com/zerfoo/float16 v0.2.1 // indirect

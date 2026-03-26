@@ -1,5 +1,7 @@
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+github.com/zerfoo/float16 v0.2.1 h1:AI65Q9z2Ll04RP3A3KAHp7TAzmmvGzCcf3yy40OmAkI=
+github.com/zerfoo/float16 v0.2.1/go.mod h1:2x2TSUN8sIoaijvE0wN9jk8ZQP/EX9i4Rohx56tqcfM=
 github.com/zerfoo/zmf v0.4.0 h1:Wyf1UlJFq8pZQ/C3irxq1Rmt6xE1UaQNmPqEqCli54E=
 github.com/zerfoo/zmf v0.4.0/go.mod h1:zW/N+7NNY/ElD7jpxDn7ZOP2KOmHh56vM3Aes5Fn6Pc=
 google.golang.org/protobuf v1.36.8 h1:xHScyCOEuuwZEc6UtSOvPbAT4zRh0xcNRYekJwfqyMc=
