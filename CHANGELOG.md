@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/zerfoo/zonnx/compare/v0.8.0...v0.9.0) (2026-03-26)
+
+
+### Features
+
+* **granite2gguf:** add Granite Time Series to GGUF converter ([3f7b701](https://github.com/zerfoo/zonnx/commit/3f7b7014bff23c48a819f3aabf72e7395ee7d621))
+
 ## [0.8.0](https://github.com/zerfoo/zonnx/compare/v0.7.0...v0.8.0) (2026-03-26)
 
 
