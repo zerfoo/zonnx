@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/zerfoo/zonnx/compare/v0.7.0...v0.8.0) (2026-03-26)
+
+
+### Features
+
+* **safetensors:** add SafeTensors file reader ([d646bd8](https://github.com/zerfoo/zonnx/commit/d646bd8fcbc088a2b533394a6d10e0b84d4e6180))
+
 ## [0.7.0](https://github.com/zerfoo/zonnx/compare/v0.6.0...v0.7.0) (2026-03-21)
 
 
