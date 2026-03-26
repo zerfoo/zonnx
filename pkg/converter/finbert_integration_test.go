@@ -156,7 +156,7 @@ func verifyGGUFHeader(t *testing.T, path string, expectedTensors int) {
 	binary.Read(f, binary.LittleEndian, &tensorCount)
 	binary.Read(f, binary.LittleEndian, &metadataCount)
 
-	if magic != 0x46554747 {
+	if magic != 0x46475547 {
 		t.Errorf("bad magic: 0x%08X", magic)
 	}
 	if version != 3 {

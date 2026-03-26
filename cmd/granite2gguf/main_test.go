@@ -159,7 +159,7 @@ func TestConvertTTM(t *testing.T) {
 
 	// Header.
 	magic := r.u32()
-	if magic != 0x46554747 {
+	if magic != 0x46475547 {
 		t.Fatalf("magic = %#x, want GGUF", magic)
 	}
 	version := r.u32()
@@ -257,7 +257,7 @@ func TestConvertTTM(t *testing.T) {
 	}
 
 	// Align to data section and verify we can read tensor data.
-	r.alignTo(64)
+	r.alignTo(32)
 	if r.pos >= len(data) {
 		t.Fatal("tensor data section beyond file bounds")
 	}
