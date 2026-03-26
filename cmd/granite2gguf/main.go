@@ -9,7 +9,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -20,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/zerfoo/zonnx/pkg/gguf"
+	sharedgguf "github.com/zerfoo/ztensor/gguf"
 	"github.com/zerfoo/zonnx/safetensors"
 )
 
@@ -99,7 +98,7 @@ func parseConfig(dir string) (*graniteConfig, error) {
 }
 
 // writeMetadata adds ts.signal.* metadata keys to the GGUF writer.
-func writeMetadata(w *gguf.Writer, gc *graniteConfig) {
+func writeMetadata(w *sharedgguf.Writer, gc *graniteConfig) {
 	w.AddMetadataString("general.architecture", "granite_ts")
 	w.AddMetadataString("general.name", gc.modelName)
 	w.AddMetadataString("ts.signal.model_type", gc.modelType)
@@ -206,7 +205,7 @@ func convert(inputDir, outputPath string) error {
 	}
 	defer outFile.Close()
 
-	w := gguf.NewWriter(outFile)
+	w := sharedgguf.NewWriter()
 
 	// Write metadata.
 	writeMetadata(w, gc)
@@ -223,22 +222,16 @@ func convert(inputDir, outputPath string) error {
 			return fmt.Errorf("read tensor %q: %w", name, err)
 		}
 
-		// Encode float32 slice to bytes.
-		data := make([]byte, len(floats)*4)
-		for i, f := range floats {
-			binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(f))
-		}
-
-		shape := make([]uint64, len(info.Shape))
+		shape := make([]int, len(info.Shape))
 		for i, d := range info.Shape {
-			shape[i] = uint64(d)
+			shape[i] = d
 		}
 
 		ggufName := mapGraniteTensorName(name)
-		w.AddTensor(ggufName, gguf.DTypeF32, shape, data)
+		w.AddTensorF32(ggufName, shape, floats)
 	}
 
-	if err := w.Flush(); err != nil {
+	if err := w.Write(outFile); err != nil {
 		return fmt.Errorf("write GGUF: %w", err)
 	}
 

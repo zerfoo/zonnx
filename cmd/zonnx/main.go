@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 
 	"github.com/zerfoo/zmf"
+	sharedgguf "github.com/zerfoo/ztensor/gguf"
 	"github.com/zerfoo/zonnx/pkg/converter"
 	"github.com/zerfoo/zonnx/pkg/downloader"
 	"github.com/zerfoo/zonnx/pkg/gguf"
@@ -243,17 +244,17 @@ func handleConvert() {
 		}
 	}()
 
-	w := gguf.NewWriter(outFile)
+	w := sharedgguf.NewWriter()
 
 	// Write GGUF metadata from ONNX model properties.
 	config := extractONNXConfig(inputFile)
 	for _, entry := range gguf.MapMetadata(*archFlag, config) {
 		switch entry.Type {
-		case gguf.TypeString:
+		case sharedgguf.MetaTypeString:
 			w.AddMetadataString(entry.Key, entry.Value.(string))
-		case gguf.TypeUint32:
+		case sharedgguf.MetaTypeUint32:
 			w.AddMetadataUint32(entry.Key, entry.Value.(uint32))
-		case gguf.TypeFloat32:
+		case sharedgguf.MetaTypeFloat32:
 			w.AddMetadataFloat32(entry.Key, entry.Value.(float32))
 		}
 	}
@@ -262,14 +263,14 @@ func handleConvert() {
 	for name, t := range zmfModel.Graph.Parameters {
 		ggufName := gguf.MapTensorName(name)
 		dtype := zmfDtypeToGGUF(t.Dtype)
-		shape := make([]uint64, len(t.Shape))
+		shape := make([]int, len(t.Shape))
 		for i, d := range t.Shape {
-			shape[i] = uint64(d)
+			shape[i] = int(d)
 		}
 		w.AddTensor(ggufName, dtype, shape, t.Data)
 	}
 
-	err = w.Flush()
+	err = w.Write(outFile)
 	handleErr(err)
 
 	fmt.Printf("Successfully converted and saved GGUF model to: %s\n", *outputFile)
@@ -291,20 +292,20 @@ func extractONNXConfig(modelPath string) map[string]interface{} {
 }
 
 // zmfDtypeToGGUF maps ZMF tensor data types to GGUF dtype constants.
-func zmfDtypeToGGUF(dtype zmf.Tensor_DataType) uint32 {
+func zmfDtypeToGGUF(dtype zmf.Tensor_DataType) int {
 	switch dtype {
 	case zmf.Tensor_FLOAT32:
-		return gguf.DTypeF32
+		return sharedgguf.TypeF32
 	case zmf.Tensor_FLOAT16:
-		return gguf.DTypeF16
+		return sharedgguf.TypeF16
 	case zmf.Tensor_BFLOAT16:
-		return gguf.DTypeBF16
+		return sharedgguf.TypeBF16
 	case zmf.Tensor_Q4_0:
-		return gguf.DTypeQ4_0
+		return sharedgguf.TypeQ4_0
 	case zmf.Tensor_Q8_0:
-		return gguf.DTypeQ8_0
+		return sharedgguf.TypeQ8_0
 	default:
-		return gguf.DTypeF32
+		return sharedgguf.TypeF32
 	}
 }
 

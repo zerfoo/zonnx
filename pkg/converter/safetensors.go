@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	sharedgguf "github.com/zerfoo/ztensor/gguf"
 	"github.com/zerfoo/zonnx/pkg/gguf"
 )
 
@@ -117,14 +118,14 @@ func (sf *SafetensorsFile) Close() error {
 }
 
 // safetensorsDtypeToGGUF maps safetensors dtype strings to GGUF dtype constants.
-func safetensorsDtypeToGGUF(dtype SafetensorsDtype) (uint32, error) {
+func safetensorsDtypeToGGUF(dtype SafetensorsDtype) (int, error) {
 	switch dtype {
 	case DtypeF32:
-		return gguf.DTypeF32, nil
+		return sharedgguf.TypeF32, nil
 	case DtypeF16:
-		return gguf.DTypeF16, nil
+		return sharedgguf.TypeF16, nil
 	case DtypeBF16:
-		return gguf.DTypeBF16, nil
+		return sharedgguf.TypeBF16, nil
 	default:
 		return 0, fmt.Errorf("unsupported safetensors dtype: %s", dtype)
 	}
@@ -169,16 +170,16 @@ func ConvertSafetensorsToGGUF(inputDir, outputPath, arch string) error {
 	}
 	defer outFile.Close()
 
-	w := gguf.NewWriter(outFile)
+	w := sharedgguf.NewWriter()
 
 	// Write metadata.
 	for _, entry := range gguf.MapMetadata(arch, config) {
 		switch entry.Type {
-		case gguf.TypeString:
+		case sharedgguf.MetaTypeString:
 			w.AddMetadataString(entry.Key, entry.Value.(string))
-		case gguf.TypeUint32:
+		case sharedgguf.MetaTypeUint32:
 			w.AddMetadataUint32(entry.Key, entry.Value.(uint32))
-		case gguf.TypeFloat32:
+		case sharedgguf.MetaTypeFloat32:
 			w.AddMetadataFloat32(entry.Key, entry.Value.(float32))
 		}
 	}
@@ -204,10 +205,14 @@ func ConvertSafetensorsToGGUF(inputDir, outputPath, arch string) error {
 		}
 
 		ggufName := gguf.MapTensorName(name)
-		w.AddTensor(ggufName, ggufDtype, info.Shape, data)
+		shape := make([]int, len(info.Shape))
+		for i, d := range info.Shape {
+			shape[i] = int(d)
+		}
+		w.AddTensor(ggufName, ggufDtype, shape, data)
 	}
 
-	if err := w.Flush(); err != nil {
+	if err := w.Write(outFile); err != nil {
 		return fmt.Errorf("write GGUF: %w", err)
 	}
 

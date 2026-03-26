@@ -3,6 +3,8 @@ package gguf
 import (
 	"fmt"
 	"math"
+
+	sharedgguf "github.com/zerfoo/ztensor/gguf"
 )
 
 // MetadataEntry represents a single GGUF metadata key-value pair.
@@ -19,15 +21,15 @@ var configMapping = []struct {
 	ggufKey  string
 	ggufType uint32
 }{
-	{"hidden_size", "{arch}.embedding_length", TypeUint32},
-	{"num_hidden_layers", "{arch}.block_count", TypeUint32},
-	{"num_attention_heads", "{arch}.attention.head_count", TypeUint32},
-	{"num_key_value_heads", "{arch}.attention.head_count_kv", TypeUint32},
-	{"intermediate_size", "{arch}.feed_forward_length", TypeUint32},
-	{"vocab_size", "{arch}.vocab_size", TypeUint32},
-	{"max_position_embeddings", "{arch}.context_length", TypeUint32},
-	{"rms_norm_eps", "{arch}.attention.layer_norm_rms_epsilon", TypeFloat32},
-	{"rope_theta", "{arch}.rope.freq_base", TypeFloat32},
+	{"hidden_size", "{arch}.embedding_length", sharedgguf.MetaTypeUint32},
+	{"num_hidden_layers", "{arch}.block_count", sharedgguf.MetaTypeUint32},
+	{"num_attention_heads", "{arch}.attention.head_count", sharedgguf.MetaTypeUint32},
+	{"num_key_value_heads", "{arch}.attention.head_count_kv", sharedgguf.MetaTypeUint32},
+	{"intermediate_size", "{arch}.feed_forward_length", sharedgguf.MetaTypeUint32},
+	{"vocab_size", "{arch}.vocab_size", sharedgguf.MetaTypeUint32},
+	{"max_position_embeddings", "{arch}.context_length", sharedgguf.MetaTypeUint32},
+	{"rms_norm_eps", "{arch}.attention.layer_norm_rms_epsilon", sharedgguf.MetaTypeFloat32},
+	{"rope_theta", "{arch}.rope.freq_base", sharedgguf.MetaTypeFloat32},
 }
 
 // bertExtraMapping defines BERT-specific config keys not covered by configMapping.
@@ -36,20 +38,20 @@ var bertExtraMapping = []struct {
 	ggufKey  string
 	ggufType uint32
 }{
-	{"layer_norm_eps", "{arch}.attention.layer_norm_epsilon", TypeFloat32},
-	{"num_labels", "{arch}.num_labels", TypeUint32},
+	{"layer_norm_eps", "{arch}.attention.layer_norm_epsilon", sharedgguf.MetaTypeFloat32},
+	{"num_labels", "{arch}.num_labels", sharedgguf.MetaTypeUint32},
 }
 
 // bertStaticMetadata defines BERT-specific metadata with fixed values.
 var bertStaticMetadata = []MetadataEntry{
-	{Key: "{arch}.pooler_type", Type: TypeString, Value: "cls"},
+	{Key: "{arch}.pooler_type", Type: sharedgguf.MetaTypeString, Value: "cls"},
 }
 
 // MapMetadata converts HuggingFace/ONNX config fields to GGUF metadata entries.
 func MapMetadata(arch string, config map[string]interface{}) []MetadataEntry {
 	entries := []MetadataEntry{
-		{Key: "general.architecture", Type: TypeString, Value: arch},
-		{Key: "general.file_type", Type: TypeUint32, Value: uint32(0)}, // F32
+		{Key: "general.architecture", Type: sharedgguf.MetaTypeString, Value: arch},
+		{Key: "general.file_type", Type: sharedgguf.MetaTypeUint32, Value: uint32(0)}, // F32
 	}
 
 	for _, m := range configMapping {
@@ -61,13 +63,13 @@ func MapMetadata(arch string, config map[string]interface{}) []MetadataEntry {
 		key := replaceArch(m.ggufKey, arch)
 
 		switch m.ggufType {
-		case TypeUint32:
+		case sharedgguf.MetaTypeUint32:
 			if u, err := toUint32(val); err == nil {
-				entries = append(entries, MetadataEntry{Key: key, Type: TypeUint32, Value: u})
+				entries = append(entries, MetadataEntry{Key: key, Type: sharedgguf.MetaTypeUint32, Value: u})
 			}
-		case TypeFloat32:
+		case sharedgguf.MetaTypeFloat32:
 			if f, err := toFloat32(val); err == nil {
-				entries = append(entries, MetadataEntry{Key: key, Type: TypeFloat32, Value: f})
+				entries = append(entries, MetadataEntry{Key: key, Type: sharedgguf.MetaTypeFloat32, Value: f})
 			}
 		}
 	}
@@ -80,13 +82,13 @@ func MapMetadata(arch string, config map[string]interface{}) []MetadataEntry {
 			}
 			key := replaceArch(m.ggufKey, arch)
 			switch m.ggufType {
-			case TypeUint32:
+			case sharedgguf.MetaTypeUint32:
 				if u, err := toUint32(val); err == nil {
-					entries = append(entries, MetadataEntry{Key: key, Type: TypeUint32, Value: u})
+					entries = append(entries, MetadataEntry{Key: key, Type: sharedgguf.MetaTypeUint32, Value: u})
 				}
-			case TypeFloat32:
+			case sharedgguf.MetaTypeFloat32:
 				if f, err := toFloat32(val); err == nil {
-					entries = append(entries, MetadataEntry{Key: key, Type: TypeFloat32, Value: f})
+					entries = append(entries, MetadataEntry{Key: key, Type: sharedgguf.MetaTypeFloat32, Value: f})
 				}
 			}
 		}

@@ -133,7 +133,7 @@ func TestOpenSafetensorsAndReadData(t *testing.T) {
 func TestSafetensorsDtypeToGGUF(t *testing.T) {
 	tests := []struct {
 		dtype SafetensorsDtype
-		want  uint32
+		want  int
 		err   bool
 	}{
 		{DtypeF32, 0, false},  // DTypeF32
