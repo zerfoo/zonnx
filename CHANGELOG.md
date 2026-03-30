@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0](https://github.com/zerfoo/zonnx/compare/v0.9.0...v1.0.0) (2026-03-30)
+
+
+### Bug Fixes
+
+* **test:** correct GGUF magic constant in test assertions ([1c4b3a6](https://github.com/zerfoo/zonnx/commit/1c4b3a60809a8cee136b9f303b27f8729ee1efd9))
+
+
+### Miscellaneous Chores
+
+* release 1.0.0 ([5f32544](https://github.com/zerfoo/zonnx/commit/5f325440693b2f7261e18b3404630f3fd4085174))
+
 ## [0.9.0](https://github.com/zerfoo/zonnx/compare/v0.8.0...v0.9.0) (2026-03-26)
 
 
