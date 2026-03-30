@@ -13,32 +13,32 @@ import (
 	"github.com/zerfoo/zonnx/pkg/gguf"
 )
 
-// SafetensorsDtype represents a data type in the safetensors format.
-type SafetensorsDtype string
+// safetensorsDtype represents a data type in the safetensors format.
+type safetensorsDtype string
 
 const (
-	DtypeF32  SafetensorsDtype = "F32"
-	DtypeF16  SafetensorsDtype = "F16"
-	DtypeBF16 SafetensorsDtype = "BF16"
+	dtypeF32  safetensorsDtype = "F32"
+	dtypeF16  safetensorsDtype = "F16"
+	dtypeBF16 safetensorsDtype = "BF16"
 )
 
-// SafetensorsTensorInfo describes a single tensor in the safetensors header.
-type SafetensorsTensorInfo struct {
-	Dtype       SafetensorsDtype `json:"dtype"`
+// safetensorsTensorInfo describes a single tensor in the safetensors header.
+type safetensorsTensorInfo struct {
+	Dtype       safetensorsDtype `json:"dtype"`
 	Shape       []uint64         `json:"shape"`
 	DataOffsets [2]uint64        `json:"data_offsets"`
 }
 
-// SafetensorsFile holds parsed safetensors header and a reader for tensor data.
-type SafetensorsFile struct {
-	Tensors    map[string]SafetensorsTensorInfo
+// safetensorsFile holds parsed safetensors header and a reader for tensor data.
+type safetensorsFile struct {
+	Tensors    map[string]safetensorsTensorInfo
 	DataOffset int64 // byte offset where tensor data begins in the file
 	file       *os.File
 }
 
-// OpenSafetensors parses a safetensors file and returns its metadata.
+// openSafetensors parses a safetensors file and returns its metadata.
 // The caller must call Close() when done.
-func OpenSafetensors(path string) (*SafetensorsFile, error) {
+func openSafetensors(path string) (*safetensorsFile, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open safetensors: %w", err)
@@ -54,7 +54,7 @@ func OpenSafetensors(path string) (*SafetensorsFile, error) {
 }
 
 // parseSafetensorsHeader reads the safetensors header from r.
-func parseSafetensorsHeader(r io.ReadSeeker) (*SafetensorsFile, error) {
+func parseSafetensorsHeader(r io.ReadSeeker) (*safetensorsFile, error) {
 	// First 8 bytes: uint64 header length (little-endian).
 	var headerLen uint64
 	if err := binary.Read(r, binary.LittleEndian, &headerLen); err != nil {
@@ -76,26 +76,26 @@ func parseSafetensorsHeader(r io.ReadSeeker) (*SafetensorsFile, error) {
 		return nil, fmt.Errorf("parse header JSON: %w", err)
 	}
 
-	tensors := make(map[string]SafetensorsTensorInfo, len(rawHeader))
+	tensors := make(map[string]safetensorsTensorInfo, len(rawHeader))
 	for name, raw := range rawHeader {
 		if name == "__metadata__" {
 			continue
 		}
-		var info SafetensorsTensorInfo
+		var info safetensorsTensorInfo
 		if err := json.Unmarshal(raw, &info); err != nil {
 			return nil, fmt.Errorf("parse tensor %q: %w", name, err)
 		}
 		tensors[name] = info
 	}
 
-	return &SafetensorsFile{
+	return &safetensorsFile{
 		Tensors:    tensors,
 		DataOffset: int64(8 + headerLen),
 	}, nil
 }
 
 // ReadTensorData reads the raw bytes for the named tensor.
-func (sf *SafetensorsFile) ReadTensorData(name string) ([]byte, error) {
+func (sf *safetensorsFile) ReadTensorData(name string) ([]byte, error) {
 	info, ok := sf.Tensors[name]
 	if !ok {
 		return nil, fmt.Errorf("tensor %q not found", name)
@@ -110,7 +110,7 @@ func (sf *SafetensorsFile) ReadTensorData(name string) ([]byte, error) {
 }
 
 // Close releases the underlying file.
-func (sf *SafetensorsFile) Close() error {
+func (sf *safetensorsFile) Close() error {
 	if sf.file != nil {
 		return sf.file.Close()
 	}
@@ -118,13 +118,13 @@ func (sf *SafetensorsFile) Close() error {
 }
 
 // safetensorsDtypeToGGUF maps safetensors dtype strings to GGUF dtype constants.
-func safetensorsDtypeToGGUF(dtype SafetensorsDtype) (int, error) {
+func safetensorsDtypeToGGUF(dtype safetensorsDtype) (int, error) {
 	switch dtype {
-	case DtypeF32:
+	case dtypeF32:
 		return sharedgguf.TypeF32, nil
-	case DtypeF16:
+	case dtypeF16:
 		return sharedgguf.TypeF16, nil
-	case DtypeBF16:
+	case dtypeBF16:
 		return sharedgguf.TypeBF16, nil
 	default:
 		return 0, fmt.Errorf("unsupported safetensors dtype: %s", dtype)
@@ -152,7 +152,7 @@ func ConvertSafetensorsToGGUF(inputDir, outputPath, arch string) error {
 		return fmt.Errorf("model.safetensors not found in %s: %w", inputDir, err)
 	}
 
-	sf, err := OpenSafetensors(stPath)
+	sf, err := openSafetensors(stPath)
 	if err != nil {
 		return err
 	}

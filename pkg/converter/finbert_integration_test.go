@@ -92,7 +92,7 @@ func TestConvertFinBERTSafetensorsToGGUF(t *testing.T) {
 
 	// Build safetensors binary. Use minimal data (all zeros) with correct byte sizes.
 	var dataBuf bytes.Buffer
-	header := make(map[string]SafetensorsTensorInfo, len(defs))
+	header := make(map[string]safetensorsTensorInfo, len(defs))
 
 	for _, d := range defs {
 		numElements := uint64(1)
@@ -104,8 +104,8 @@ func TestConvertFinBERTSafetensorsToGGUF(t *testing.T) {
 		zeros := make([]byte, numElements*4) // 4 bytes per float32
 		dataBuf.Write(zeros)
 		end := uint64(dataBuf.Len())
-		header[d.name] = SafetensorsTensorInfo{
-			Dtype:       DtypeF32,
+		header[d.name] = safetensorsTensorInfo{
+			Dtype:       dtypeF32,
 			Shape:       d.shape,
 			DataOffsets: [2]uint64{start, end},
 		}

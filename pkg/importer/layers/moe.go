@@ -6,23 +6,23 @@ import (
 )
 
 func init() {
-	registry.Register("MoEGate", BuildMoEGate)
-	registry.Register("MixtureOfExperts", BuildMixtureOfExperts)
+	registry.Register("MoEGate", buildMoEGate)
+	registry.Register("MixtureOfExperts", buildMixtureOfExperts)
 }
 
-// BuildMoEGate creates a MoEGate layer from an ONNX node.
+// buildMoEGate creates a MoEGate layer from an ONNX node.
 // The "top_k" INT attribute is preserved by the generic convertNode path.
-func BuildMoEGate(
+func buildMoEGate(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {
 	return nil, nil
 }
 
-// BuildMixtureOfExperts creates a MixtureOfExperts layer from an ONNX node.
+// buildMixtureOfExperts creates a MixtureOfExperts layer from an ONNX node.
 // The "num_experts" and "top_k" INT attributes are preserved by the generic
 // convertNode path. Expert sub-graph loading is not yet supported (tech debt).
-func BuildMixtureOfExperts(
+func buildMixtureOfExperts(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

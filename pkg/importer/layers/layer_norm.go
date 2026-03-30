@@ -6,14 +6,14 @@ import (
 )
 
 func init() {
-	registry.Register("LayerNormalization", BuildLayerNormalization)
+	registry.Register("LayerNormalization", buildLayerNormalization)
 }
 
-// BuildLayerNormalization creates a LayerNormalization layer from an ONNX node.
+// buildLayerNormalization creates a LayerNormalization layer from an ONNX node.
 // The "epsilon" (FLOAT) and "axis" (INT) attributes are preserved by the
 // generic convertNode path in the converter; Scale and Bias parameters are
 // treated as regular graph inputs.
-func BuildLayerNormalization(
+func buildLayerNormalization(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

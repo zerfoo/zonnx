@@ -6,12 +6,12 @@ import (
 )
 
 func init() {
-	registry.Register("GlobalAveragePool", BuildGlobalAveragePool)
+	registry.Register("GlobalAveragePool", buildGlobalAveragePool)
 }
 
-// BuildGlobalAveragePool creates a GlobalAveragePool layer from an ONNX node.
+// buildGlobalAveragePool creates a GlobalAveragePool layer from an ONNX node.
 // The op has no ONNX attributes and a single input X [N, C, H, W].
-func BuildGlobalAveragePool(
+func buildGlobalAveragePool(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

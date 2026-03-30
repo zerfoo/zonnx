@@ -6,13 +6,13 @@ import (
 )
 
 func init() {
-	registry.Register("BatchNormalization", BuildBatchNormalization)
+	registry.Register("BatchNormalization", buildBatchNormalization)
 }
 
-// BuildBatchNormalization creates a BatchNormalization layer from an ONNX node.
+// buildBatchNormalization creates a BatchNormalization layer from an ONNX node.
 // The "epsilon" (FLOAT) attribute is preserved by the generic convertNode path.
 // scale, B, mean, and var are float initializers treated as regular graph inputs.
-func BuildBatchNormalization(
+func buildBatchNormalization(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

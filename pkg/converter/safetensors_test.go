@@ -16,7 +16,7 @@ func buildSafetensors(t *testing.T, tensors map[string][]float32, shapes map[str
 
 	// Build raw data and header entries.
 	var dataBuf bytes.Buffer
-	header := make(map[string]SafetensorsTensorInfo, len(tensors))
+	header := make(map[string]safetensorsTensorInfo, len(tensors))
 
 	// Sort keys for deterministic layout.
 	keys := make([]string, 0, len(tensors))
@@ -33,8 +33,8 @@ func buildSafetensors(t *testing.T, tensors map[string][]float32, shapes map[str
 			}
 		}
 		end := uint64(dataBuf.Len())
-		header[name] = SafetensorsTensorInfo{
-			Dtype:       DtypeF32,
+		header[name] = safetensorsTensorInfo{
+			Dtype:       dtypeF32,
 			Shape:       shapes[name],
 			DataOffsets: [2]uint64{start, end},
 		}
@@ -80,7 +80,7 @@ func TestParseSafetensorsHeader(t *testing.T) {
 	if !ok {
 		t.Fatal("missing tensor 'weight'")
 	}
-	if w.Dtype != DtypeF32 {
+	if w.Dtype != dtypeF32 {
 		t.Errorf("expected dtype F32, got %s", w.Dtype)
 	}
 	if len(w.Shape) != 2 || w.Shape[0] != 2 || w.Shape[1] != 2 {
@@ -113,7 +113,7 @@ func TestOpenSafetensorsAndReadData(t *testing.T) {
 		t.Fatalf("write temp file: %v", err)
 	}
 
-	sf, err := OpenSafetensors(path)
+	sf, err := openSafetensors(path)
 	if err != nil {
 		t.Fatalf("open safetensors: %v", err)
 	}
@@ -132,13 +132,13 @@ func TestOpenSafetensorsAndReadData(t *testing.T) {
 
 func TestSafetensorsDtypeToGGUF(t *testing.T) {
 	tests := []struct {
-		dtype SafetensorsDtype
+		dtype safetensorsDtype
 		want  int
 		err   bool
 	}{
-		{DtypeF32, 0, false},  // DTypeF32
-		{DtypeF16, 1, false},  // DTypeF16
-		{DtypeBF16, 30, false}, // DTypeBF16
+		{dtypeF32, 0, false},  // DTypeF32
+		{dtypeF16, 1, false},  // DTypeF16
+		{dtypeBF16, 30, false}, // DTypeBF16
 		{"INT8", 0, true},
 	}
 	for _, tc := range tests {

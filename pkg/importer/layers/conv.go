@@ -6,15 +6,15 @@ import (
 )
 
 func init() {
-	registry.Register("Conv", BuildConv)
+	registry.Register("Conv", buildConv)
 }
 
-// BuildConv creates a Conv (2D convolution) layer from an ONNX node.
+// buildConv creates a Conv (2D convolution) layer from an ONNX node.
 // The ONNX "Conv" op carries strides, pads, dilations, group, and
 // kernel_shape as regular ONNX attributes, which are preserved by the
 // generic convertNode path.  X is data input[0]; W (kernel) and optional B
 // (bias) are float initializers treated as regular graph inputs.
-func BuildConv(
+func buildConv(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

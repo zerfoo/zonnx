@@ -6,12 +6,12 @@ import (
 )
 
 func init() {
-	registry.Register("Erf", BuildErf)
+	registry.Register("Erf", buildErf)
 }
 
-// BuildErf creates an Erf layer from an ONNX node.
+// buildErf creates an Erf layer from an ONNX node.
 // Erf has no configurable attributes.
-func BuildErf(
+func buildErf(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

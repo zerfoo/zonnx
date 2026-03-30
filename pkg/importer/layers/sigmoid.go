@@ -6,12 +6,12 @@ import (
 )
 
 func init() {
-	registry.Register("Sigmoid", BuildSigmoid)
+	registry.Register("Sigmoid", buildSigmoid)
 }
 
-// BuildSigmoid creates a Sigmoid layer from an ONNX node.
+// buildSigmoid creates a Sigmoid layer from an ONNX node.
 // Sigmoid has no configurable attributes.
-func BuildSigmoid(
+func buildSigmoid(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {
