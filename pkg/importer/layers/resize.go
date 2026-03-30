@@ -6,14 +6,14 @@ import (
 )
 
 func init() {
-	registry.Register("Resize", BuildResize)
+	registry.Register("Resize", buildResize)
 }
 
-// BuildResize creates a Resize layer from an ONNX node.
+// buildResize creates a Resize layer from an ONNX node.
 // The converter promotes input[2] (scales, FLOAT tensor) to a "scales" FLOATS
 // attribute and input[3] (sizes, INT64 tensor) to a "sizes" INTS attribute.
 // The "mode" ONNX attribute is preserved by the generic convertNode path.
-func BuildResize(
+func buildResize(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

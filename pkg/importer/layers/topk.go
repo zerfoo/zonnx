@@ -6,14 +6,14 @@ import (
 )
 
 func init() {
-	registry.Register("TopK", BuildTopK)
+	registry.Register("TopK", buildTopK)
 }
 
-// BuildTopK creates a TopK layer from an ONNX node.
+// buildTopK creates a TopK layer from an ONNX node.
 // The ONNX K input tensor is promoted to a ZMF "k" attribute by the
 // converter. The "axis", "largest", and "sorted" ONNX attributes are
 // preserved by the generic convertNode path.
-func BuildTopK(
+func buildTopK(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

@@ -8,11 +8,11 @@ import (
 )
 
 func init() {
-	registry.Register("Transpose", BuildTranspose)
+	registry.Register("Transpose", buildTranspose)
 }
 
-// BuildTranspose creates a new Transpose layer from an ONNX node.
-func BuildTranspose(
+// buildTranspose creates a new Transpose layer from an ONNX node.
+func buildTranspose(
 	node *onnx.NodeProto,
 	ctx *registry.ConversionContext,
 ) (interface{}, error) {

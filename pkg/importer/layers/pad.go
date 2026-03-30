@@ -6,14 +6,14 @@ import (
 )
 
 func init() {
-	registry.Register("Pad", BuildPad)
+	registry.Register("Pad", buildPad)
 }
 
-// BuildPad creates a Pad layer from an ONNX node.
+// buildPad creates a Pad layer from an ONNX node.
 // In ONNX opset 11+, pads and constant_value are encoded as input tensors.
 // The converter promotes them to ZMF attributes named "pads" and
 // "constant_value" before this builder is invoked.
-func BuildPad(
+func buildPad(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

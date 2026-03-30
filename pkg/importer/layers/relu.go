@@ -6,11 +6,11 @@ import (
 )
 
 func init() {
-	registry.Register("Relu", BuildReLU)
+	registry.Register("Relu", buildReLU)
 }
 
-// BuildReLU creates a new ReLU layer from an ONNX node.
-func BuildReLU(
+// buildReLU creates a new ReLU layer from an ONNX node.
+func buildReLU(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

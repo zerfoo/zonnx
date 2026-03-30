@@ -9,11 +9,11 @@ import (
 )
 
 func init() {
-	registry.Register("Reshape", BuildReshape)
+	registry.Register("Reshape", buildReshape)
 }
 
-// BuildReshape creates a new Reshape layer from an ONNX node.
-func BuildReshape(
+// buildReshape creates a new Reshape layer from an ONNX node.
+func buildReshape(
 	node *onnx.NodeProto,
 	ctx *registry.ConversionContext,
 ) (interface{}, error) {

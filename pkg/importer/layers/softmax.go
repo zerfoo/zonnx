@@ -6,13 +6,13 @@ import (
 )
 
 func init() {
-	registry.Register("Softmax", BuildSoftmax)
+	registry.Register("Softmax", buildSoftmax)
 }
 
-// BuildSoftmax creates a Softmax layer from an ONNX node.
+// buildSoftmax creates a Softmax layer from an ONNX node.
 // The "axis" attribute (INT, default -1) is preserved by the generic
 // convertNode path in the converter; no special handling is needed here.
-func BuildSoftmax(
+func buildSoftmax(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {

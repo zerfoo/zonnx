@@ -6,14 +6,14 @@ import (
 )
 
 func init() {
-	registry.Register("Slice", BuildSlice)
+	registry.Register("Slice", buildSlice)
 }
 
-// BuildSlice creates a Slice layer from an ONNX node.
+// buildSlice creates a Slice layer from an ONNX node.
 // In ONNX opset 10+, starts/ends/axes/steps are encoded as input tensors.
 // The converter promotes them to ZMF attributes named "starts", "ends",
 // "axes", and "steps" before this builder is invoked.
-func BuildSlice(
+func buildSlice(
 	_ *onnx.NodeProto,
 	_ *registry.ConversionContext,
 ) (interface{}, error) {
