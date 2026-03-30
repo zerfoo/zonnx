@@ -159,7 +159,7 @@ func TestConvertTTM(t *testing.T) {
 
 	// Header.
 	magic := r.u32()
-	if magic != 0x46475547 {
+	if magic != 0x46554747 {
 		t.Fatalf("magic = %#x, want GGUF", magic)
 	}
 	version := r.u32()
